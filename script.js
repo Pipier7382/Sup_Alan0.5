@@ -41,6 +41,8 @@ let semanaSelecionada = inicioDaSemana(dataHoje());
 let modoAgendaPeriodo = 'semana';
 let dataAgendaPeriodo = dataHoje();
 let filtroPeriodoGerencia = {};
+let supSelecionada = null;
+let gerenciaSuporteSelecionada = null;
 
 const app = document.getElementById('app');
 
@@ -121,17 +123,23 @@ async function rpc(nome,args){
   if(error) throw error;
   return data;
 }
-async function criarGerente(nomeGerencia,nomeGerente,senha){
-  return rpc('criar_gerente',{p_token:sessao,p_nome_gerencia:nomeGerencia,p_nome_gerente:nomeGerente,p_senha:senha});
+async function criarGerente(nomeGerencia,nomeGerente,senha,superintendenciaId){
+  return rpc('criar_gerente',{p_token:sessao,p_nome_gerencia:nomeGerencia,p_nome_gerente:nomeGerente,p_senha:senha,p_superintendencia_id:superintendenciaId||null});
 }
 async function excluirGerente(gerenciaId){
   return rpc('excluir_gerente',{p_token:sessao,p_gerencia_id:gerenciaId});
 }
-async function criarCorretor(nome,senha){
-  return rpc('criar_corretor',{p_token:sessao,p_nome:nome,p_senha:senha});
+async function criarCorretor(nome,senha,gerenciaId){
+  return rpc('criar_corretor',{p_token:sessao,p_nome:nome,p_senha:senha,p_gerencia_id:gerenciaId||null});
 }
 async function excluirCorretor(corretorId){
   return rpc('excluir_corretor',{p_token:sessao,p_corretor_id:corretorId});
+}
+async function criarSuperintendencia(nomeSuperintendencia,nomeSuperintendente,senha){
+  return rpc('criar_superintendencia',{p_token:sessao,p_nome_superintendencia:nomeSuperintendencia,p_nome_superintendente:nomeSuperintendente,p_senha:senha});
+}
+async function excluirSuperintendencia(superintendenciaId){
+  return rpc('excluir_superintendencia',{p_token:sessao,p_superintendencia_id:superintendenciaId});
 }
 
 async function login(tipo,nome,senha){
@@ -166,7 +174,7 @@ function renderLogin(){
       <div class="brand"><div class="logo">🐊</div><h1>Relatório da Superintendência</h1><p>Acesso ao sistema</p></div>
       <form id="loginForm">
         <div class="field"><label>Você é</label>
-          <select id="tipo"><option value="corretor">Corretor</option><option value="gerente">Gerente</option><option value="superintendente">Superintendente</option></select>
+          <select id="tipo"><option value="corretor">Corretor</option><option value="gerente">Gerente</option><option value="superintendente">Superintendente</option><option value="suporte">Suporte</option></select>
         </div>
         <div class="field"><label>Nome</label><input id="nome" required autocomplete="username" placeholder="Digite seu nome"></div>
         <div class="field"><label>Senha</label><input id="senha" required type="password" autocomplete="current-password" placeholder="Digite sua senha"></div>
@@ -185,9 +193,10 @@ function renderLogin(){
 }
 
 function shell(content){
-  const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente'}[usuario.tipo];
+  const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente',suporte:'Suporte'}[usuario.tipo];
+  const badgeMaster=usuario.tipo==='suporte'?' <span class="badge">Acesso master</span>':'';
   app.innerHTML=`<div class="shell"><header class="topbar">
-    <div><div class="title">🐊 Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}</div></div>
+    <div><div class="title">🐊 Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}${badgeMaster}</div></div>
     <div class="userbox"><span>${esc(usuario.nome)}</span><button class="btn secondary" id="sair">Sair</button></div>
   </header><main class="layout">${content}</main></div>`;
   document.getElementById('sair').onclick=logout;
@@ -198,6 +207,8 @@ function nav(){
     ? [['inicio','📊 Meu painel'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
     : usuario.tipo==='gerente'
     ? [['inicio','📊 Minha equipe'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
+    : usuario.tipo==='suporte'
+    ? [['inicio','🛠️ Suporte']]
     : [['inicio','🏢 Visão geral']];
   return `<div class="nav">${itens.map(([id,t])=>`<button class="${tela===id?'active':''}" data-nav="${id}">${t}</button>`).join('')}</div>`;
 }
@@ -418,6 +429,130 @@ function bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,dataIni,dataFi
     e.stopPropagation();
     copiarTexto(textoTotalGeral(tTotal,periodoLabel,rankingGeral,dataIni,dataFim),btn);
   };
+}
+
+function renderSuporte(){
+  const superintendencias=dados.superintendencias||[];
+  const superintendentes=dados.superintendentes||[];
+  const gerencias=dados.gerencias||[];
+  const gerentes=dados.gerentes||[];
+  const corretores=dados.corretores||[];
+
+  if((!supSelecionada||!superintendencias.some(s=>s.id===supSelecionada))) supSelecionada=superintendencias[0]?.id||null;
+  const gerenciasDaSup=gerencias.filter(g=>g.superintendencia_id===supSelecionada);
+  if(!gerenciaSuporteSelecionada||!gerenciasDaSup.some(g=>g.id===gerenciaSuporteSelecionada)) gerenciaSuporteSelecionada=gerenciasDaSup[0]?.id||null;
+
+  const linhasSup=superintendencias.map(s=>{
+    const nomeSuperintendente=superintendentes.find(x=>x.superintendencia_id===s.id)?.nome||'—';
+    return `<tr><td>${esc(s.nome)}</td><td>${esc(nomeSuperintendente)}</td><td><button class="danger-link" data-del-sup="${s.id}">Remover</button></td></tr>`;
+  }).join('');
+  const painelSup=`<div class="panel">
+    <h2>Superintendências</h2>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Superintendência</th><th>Superintendente</th><th></th></tr></thead>
+      <tbody>${linhasSup||'<tr><td colspan="3" class="empty">Nenhuma superintendência cadastrada.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Nome da superintendência</label><input id="novaSupNome" placeholder="Ex: Superintendência São Paulo"></div>
+      <div class="field"><label>Nome do superintendente</label><input id="novoSupNome" placeholder="Nome do superintendente"></div>
+      <div class="field"><label>Senha</label><input id="novoSupSenha" type="password" placeholder="Senha de acesso"></div>
+    </div>
+    <button class="btn" id="addSup" style="margin-top:8px">Adicionar superintendência</button>
+  </div>`;
+
+  const seletorSup=`<select class="select" id="selSupAlvo">${superintendencias.map(s=>`<option value="${s.id}" ${s.id===supSelecionada?'selected':''}>${esc(s.nome)}</option>`).join('')}</select>`;
+  const linhasGer=gerenciasDaSup.map(g=>{
+    const nomeGerente=gerentes.find(x=>x.gerencia_id===g.id)?.nome||'—';
+    return `<tr><td>${esc(g.nome)}</td><td>${esc(nomeGerente)}</td><td><button class="danger-link" data-del-ger-sup="${g.id}">Remover</button></td></tr>`;
+  }).join('');
+  const painelGer=supSelecionada?`<div class="panel">
+    <h2>Gerências</h2>
+    <div class="toolbar" style="margin-bottom:12px"><label>Superintendência ${seletorSup}</label></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Gerência</th><th>Gerente</th><th></th></tr></thead>
+      <tbody>${linhasGer||'<tr><td colspan="3" class="empty">Nenhuma gerência cadastrada.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Nome da equipe/gerência</label><input id="novaGerSupNome" placeholder="Ex: Equipe 1"></div>
+      <div class="field"><label>Nome do gerente</label><input id="novoGerSupNome" placeholder="Nome do gerente"></div>
+      <div class="field"><label>Senha</label><input id="novoGerSupSenha" type="password" placeholder="Senha de acesso"></div>
+    </div>
+    <button class="btn" id="addGerSup" style="margin-top:8px">Adicionar gerência</button>
+  </div>`:'<div class="panel"><p class="muted">Cadastre uma superintendência para começar.</p></div>';
+
+  const corretoresDaGerencia=corretores.filter(c=>c.gerencia_id===gerenciaSuporteSelecionada);
+  const seletorGer=gerenciasDaSup.length?`<select class="select" id="selGerAlvo">${gerenciasDaSup.map(g=>`<option value="${g.id}" ${g.id===gerenciaSuporteSelecionada?'selected':''}>${esc(g.nome)}</option>`).join('')}</select>`:'';
+  const linhasCor=corretoresDaGerencia.map(c=>`<tr><td>${esc(c.nome)}</td><td><button class="danger-link" data-del-cor-sup="${c.id}">Remover</button></td></tr>`).join('');
+  const painelCor=gerenciaSuporteSelecionada?`<div class="panel">
+    <h2>Corretores</h2>
+    <div class="toolbar" style="margin-bottom:12px"><label>Gerência ${seletorGer}</label></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th></th></tr></thead>
+      <tbody>${linhasCor||'<tr><td colspan="2" class="empty">Nenhum corretor cadastrado.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Nome do corretor</label><input id="novoCorSupNome" placeholder="Nome do corretor"></div>
+      <div class="field"><label>Senha</label><input id="novoCorSupSenha" type="password" placeholder="Senha de acesso"></div>
+    </div>
+    <button class="btn" id="addCorSup" style="margin-top:8px">Adicionar corretor</button>
+  </div>`:(gerenciasDaSup.length?'':'<div class="panel"><p class="muted">Cadastre uma gerência para poder adicionar corretores.</p></div>');
+
+  shell(`${nav()}<h1>🛠️ Painel do Suporte</h1>
+    <p class="muted">Acesso master: crie e remova superintendências, gerências e corretores de qualquer empresa. Remover sempre desativa o acesso — o histórico de relatórios é mantido.</p>
+    ${painelSup}
+    <div class="grid2">${painelGer}${painelCor}</div>`);
+  bindNav();
+  bindSuporte();
+}
+function bindSuporte(){
+  document.getElementById('selSupAlvo')?.addEventListener('change',e=>{supSelecionada=e.target.value;gerenciaSuporteSelecionada=null;render();});
+  document.getElementById('selGerAlvo')?.addEventListener('change',e=>{gerenciaSuporteSelecionada=e.target.value;render();});
+
+  document.querySelectorAll('[data-del-sup]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover essa superintendência inteira (todas as gerências e corretores dela)? Os acessos serão desativados; o histórico é mantido.'))return;
+    try{
+      await excluirSuperintendencia(b.dataset.delSup);
+      if(supSelecionada===b.dataset.delSup) supSelecionada=null;
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addSup')?.addEventListener('click',async()=>{
+    try{
+      const ns=document.getElementById('novaSupNome').value.trim();
+      const nn=document.getElementById('novoSupNome').value.trim();
+      const sn=document.getElementById('novoSupSenha').value;
+      if(!ns||!nn||!sn) throw new Error('Preencha o nome da superintendência, o nome do superintendente e a senha.');
+      const id=await criarSuperintendencia(ns,nn,sn);
+      supSelecionada=id;
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+
+  document.querySelectorAll('[data-del-ger-sup]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover essa gerência e toda a equipe dela (corretores inclusive)? Os acessos serão desativados; o histórico é mantido.'))return;
+    try{ await excluirGerente(b.dataset.delGerSup); await atualizar(); render(); }
+    catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addGerSup')?.addEventListener('click',async()=>{
+    try{
+      const ng=document.getElementById('novaGerSupNome').value.trim();
+      const nn=document.getElementById('novoGerSupNome').value.trim();
+      const sn=document.getElementById('novoGerSupSenha').value;
+      if(!ng||!nn||!sn) throw new Error('Preencha o nome da equipe, o nome do gerente e a senha.');
+      const id=await criarGerente(ng,nn,sn,supSelecionada);
+      gerenciaSuporteSelecionada=id;
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+
+  document.querySelectorAll('[data-del-cor-sup]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover esse corretor? O acesso será desativado; o histórico é mantido.'))return;
+    try{ await excluirCorretor(b.dataset.delCorSup); await atualizar(); render(); }
+    catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addCorSup')?.addEventListener('click',async()=>{
+    try{
+      const nn=document.getElementById('novoCorSupNome').value.trim();
+      const sn=document.getElementById('novoCorSupSenha').value;
+      if(!nn||!sn) throw new Error('Preencha o nome e a senha do corretor.');
+      await criarCorretor(nn,sn,gerenciaSuporteSelecionada);
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
 }
 
 function renderLancamento(){
@@ -644,6 +779,8 @@ function render(){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderCorretor();
   }else if(usuario.tipo==='gerente'){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderGerente();
+  }else if(usuario.tipo==='suporte'){
+    renderSuporte();
   }else renderSuper();
 }
 
