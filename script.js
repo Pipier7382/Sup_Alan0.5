@@ -399,26 +399,65 @@ function bindAgendamentosSemanaGerente(){
   document.getElementById('semanaGerData').onchange=e=>{semanaSelecionada=e.target.value;render();};
 }
 
+function cartaoAgendamentosSemanaLeitura(corretor){
+  const semana=inicioDaSemana(semanaSelecionada);
+  const faixa=`${br(semana)} a ${br(somaDias(semana,6))}`;
+  const v=agendamentoSemanaDe(corretor.id,semana)||vazioSemana();
+  return `<div class="panel">
+    <h2>Agendamentos totais da semana</h2>
+    <div class="form-grid"><div class="field"><label>Qualquer dia da semana desejada</label><input id="semanaData" type="date" value="${semanaSelecionada}"></div></div>
+    <p class="muted">Semana: ${faixa}</p>
+    <div class="week-cards"><div class="week-card"><h4>${esc(corretor.nome)}</h4>
+      <div class="week-days">${DIAS_SEMANA.map(([id,l])=>`<div class="week-day"><span>${l}</span><strong>${n(v[id])}</strong></div>`).join('')}</div>
+      <div class="week-total">Total da semana: <strong>${somaSemana(v)}</strong></div>
+    </div></div>
+  </div>`;
+}
+function bindSemanaDataApenas(){
+  document.getElementById('semanaData').onchange=e=>{semanaSelecionada=e.target.value;render();};
+}
+
 function renderAgenda(){
   const corretores=dados.corretores||[];
+  const souGerente=usuario.tipo!=='corretor';
   if(usuario.tipo==='corretor') corretorSelecionado=usuario.corretor_id;
   if(!corretorSelecionado) corretorSelecionado=corretores[0]?.id;
-  const sel=corretores.map(c=>`<option value="${c.id}" ${c.id===corretorSelecionado?'selected':''}>${esc(c.nome)}</option>`).join('');
-  const itens=(dados.agendamentos_clientes||[]).filter(a=>a.corretor_id===corretorSelecionado);
-  shell(`${nav()}<h1>Agendamentos</h1><div class="panel">
-    <div class="form-grid"><div class="field"><label>Corretor</label><select class="select" id="agendaCorretor" ${usuario.tipo==='corretor'?'disabled':''}>${sel}</select></div>
+  const todos=souGerente&&corretorSelecionado==='TODOS';
+  const sel=(souGerente?`<option value="TODOS" ${corretorSelecionado==='TODOS'?'selected':''}>Todos</option>`:'')
+    +corretores.map(c=>`<option value="${c.id}" ${c.id===corretorSelecionado?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const itens=todos?(dados.agendamentos_clientes||[]):(dados.agendamentos_clientes||[]).filter(a=>a.corretor_id===corretorSelecionado);
+  const corretorAtual=corretores.find(c=>c.id===corretorSelecionado);
+
+  const formAdicionar=usuario.tipo==='corretor'?`<div class="panel">
+    <div class="form-grid"><div class="field"><label>Corretor</label><select class="select" id="agendaCorretor" disabled>${sel}</select></div>
     <div class="field"><label>Data</label><input id="agendaData" type="date" value="${filtroInicio}"></div>
     <div class="field"><label>Horário</label><input id="agendaHora" type="time"></div>
     <div class="field"><label>Cliente</label><input id="agendaCliente" placeholder="Nome do cliente"></div>
     <div class="field"><label>Telefone</label><input id="agendaTelefone" placeholder="Telefone"></div></div>
-    <button class="btn" id="addAgenda">Adicionar agendamento</button></div>
-    ${painelAgendamentosSemana()}
-    <div class="panel"><h2>Agenda cadastrada</h2>${tabelaAgenda(itens)}</div>`);
+    <button class="btn" id="addAgenda">Adicionar agendamento</button></div>`
+    :`<div class="panel"><div class="form-grid"><div class="field"><label>Corretor</label><select class="select" id="agendaCorretor">${sel}</select></div></div>
+    <p class="muted" style="margin-top:10px">Como gerente, você só pode visualizar os agendamentos — quem cadastra é o próprio corretor.</p></div>`;
+
+  const painelSemana=usuario.tipo==='corretor'
+    ? painelAgendamentosSemana()
+    : todos
+    ? paineisAgendamentosSemanaGerente(corretores)
+    : corretorAtual ? cartaoAgendamentosSemanaLeitura(corretorAtual) : '';
+
+  shell(`${nav()}<h1>Agendamentos</h1>
+    ${souGerente?filtros():''}
+    ${formAdicionar}
+    ${painelSemana}
+    <div class="panel"><h2>Agenda cadastrada</h2>${tabelaAgenda(itens,usuario.tipo==='corretor')}</div>`);
   bindNav();
-  bindAgendamentosSemana();
+  if(souGerente) bindFiltros();
+  if(usuario.tipo==='corretor') bindAgendamentosSemana();
+  else if(todos) bindAgendamentosSemanaGerente();
+  else if(corretorAtual) bindSemanaDataApenas();
+
   document.getElementById('agendaCorretor')?.addEventListener('change',e=>{corretorSelecionado=e.target.value;render();});
-  document.getElementById('agendaData').onchange=async e=>{filtroInicio=filtroFim=e.target.value;await atualizar();render();};
-  document.getElementById('addAgenda').onclick=async()=>{
+  document.getElementById('agendaData')?.addEventListener('change',async e=>{filtroInicio=filtroFim=e.target.value;await atualizar();render();});
+  document.getElementById('addAgenda')?.addEventListener('click',async()=>{
     try{
       const c=document.getElementById('agendaCorretor').value,d=document.getElementById('agendaData').value,h=document.getElementById('agendaHora').value,
       cl=document.getElementById('agendaCliente').value.trim(),tel=document.getElementById('agendaTelefone').value.trim();
@@ -426,15 +465,15 @@ function renderAgenda(){
       await rpc('salvar_agendamento_cliente',{p_token:sessao,p_corretor_id:c,p_data:d,p_horario:h,p_cliente:cl,p_telefone:tel});
       await atualizar();render();
     }catch(e){mostrarErro(e.message);}
-  };
+  });
   document.querySelectorAll('[data-del-ag]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Excluir este agendamento?'))return;
     try{await rpc('excluir_agendamento_cliente',{p_token:sessao,p_id:b.dataset.delAg});await atualizar();render();}catch(e){mostrarErro(e.message);}
   });
 }
-function tabelaAgenda(itens){
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Telefone</th><th>Corretor</th><th></th></tr></thead><tbody>
-  ${itens.map(a=>`<tr><td>${br(a.data)}</td><td>${String(a.horario).slice(0,5)}</td><td>${esc(a.cliente)}</td><td>${esc(a.telefone||'')}</td><td>${esc(a.corretor)}</td><td><button class="danger-link" data-del-ag="${a.id}">Excluir</button></td></tr>`).join('')||`<tr><td colspan="6" class="empty">Nenhum agendamento.</td></tr>`}
+function tabelaAgenda(itens,permiteExcluir){
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Telefone</th><th>Corretor</th>${permiteExcluir?'<th></th>':''}</tr></thead><tbody>
+  ${itens.map(a=>`<tr><td>${br(a.data)}</td><td>${String(a.horario).slice(0,5)}</td><td>${esc(a.cliente)}</td><td>${esc(a.telefone||'')}</td><td>${esc(a.corretor)}</td>${permiteExcluir?`<td><button class="danger-link" data-del-ag="${a.id}">Excluir</button></td>`:''}</tr>`).join('')||`<tr><td colspan="${permiteExcluir?6:5}" class="empty">Nenhum agendamento.</td></tr>`}
   </tbody></table></div>`;
 }
 
