@@ -177,6 +177,18 @@ a{color:var(--gold-400)}
 .manager-card{cursor:pointer;transition:transform .14s ease,border-color .14s ease}
 .manager-card:hover{transform:translateY(-3px);border-color:var(--gold-500)}
 .manager-card h2{color:var(--gold-400)}
+.manager-card-total{
+  cursor:default;
+  background:linear-gradient(180deg,var(--gold-600),#7a5f1a);
+  border-color:var(--gold-500);
+}
+.manager-card-total:hover{transform:none}
+.manager-card-total h2{color:#fff}
+.manager-card-total .card{background:rgba(0,0,0,.18);border-color:rgba(255,255,255,.18)}
+.manager-card-total .card .label{color:rgba(255,255,255,.7)}
+.manager-card-total .card .value{color:#fff}
+.manager-card-total .muted{color:rgba(255,255,255,.75)}
+.manager-card-total .toolbar label{color:rgba(255,255,255,.85)}
 
 .muted{color:var(--ink-400)}
 
