@@ -12,19 +12,21 @@ const { createClient } = window.supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const CAMPOS = [
-  ['interacoes','Interações'],['negociacoes','Negociações'],
+  ['leads_novos','Leads Novos'],['interacoes','Interações'],['negociacoes','Negociações'],
   ['agendamentos','Agendamentos'],['visitas','Visitas'],
-  ['propostas','Propostas'],['vendas','Vendas']
+  ['propostas','Propostas'],['pre_vendas','Pré-vendas'],['vendas','Vendas 100%']
 ];
 const PERIODOS = ['12:00','15:00','18:00','21:00'];
-const CHAVE_RANK = ['vendas','propostas','visitas','agendamentos','negociacoes','interacoes'];
+const CHAVE_RANK = ['vendas','pre_vendas','propostas','visitas','agendamentos','negociacoes','interacoes','leads_novos'];
 const DIAS_SEMANA = [['seg','Seg'],['ter','Ter'],['qua','Qua'],['qui','Qui'],['sex','Sex'],['sab','Sáb'],['dom','Dom']];
 const CONVERSOES = [
+  ['leads_novos','interacoes','Leads Novos → Interações'],
   ['interacoes','negociacoes','Interações → Negociações'],
   ['negociacoes','agendamentos','Negociações → Agendamentos'],
   ['agendamentos','visitas','Agendamentos → Visitas'],
   ['visitas','propostas','Visitas → Propostas'],
-  ['propostas','vendas','Propostas → Vendas'],
+  ['propostas','pre_vendas','Propostas → Pré-vendas'],
+  ['pre_vendas','vendas','Pré-vendas → Vendas 100%'],
 ];
 function pct(num,den){ return den?(num/den*100).toFixed(1)+'%':'—'; }
 
@@ -269,7 +271,7 @@ function renderGerente(){
   const ranked=equipe.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank);
   const total=somar(dados.relatorios||[]);
   shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc((dados.corretores||[])[0]?.gerencia||'Minha equipe')}</h1>${filtros()}${cards(total)}
-    <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda → Proposta → Visita → Agendamento → Negociação → Interação.</p>${tabelaRanking(ranked)}</div>
+    <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda 100% → Pré-venda → Proposta → Visita → Agendamento → Negociação → Interação → Lead Novo.</p>${tabelaRanking(ranked)}</div>
     <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
     ${painelCorretoresEquipe()}
     ${painelAgendamentosPeriodo(equipe)}
@@ -397,8 +399,9 @@ async function salvarDia(){
     const c=document.getElementById('selCorretor').value, d=document.getElementById('dataLanc').value;
     for(const p of PERIODOS){
       const vals=CAMPOS.map(([id])=>n(document.getElementById(`${id}_${p.replace(':','')}`).value));
-      await rpc('salvar_relatorio',{p_token:sessao,p_corretor_id:c,p_data:d,p_periodo:p,
-        p_interacoes:vals[0],p_negociacoes:vals[1],p_agendamentos:vals[2],p_visitas:vals[3],p_propostas:vals[4],p_vendas:vals[5]});
+      const args={p_token:sessao,p_corretor_id:c,p_data:d,p_periodo:p};
+      CAMPOS.forEach(([id],idx)=>{ args['p_'+id]=vals[idx]; });
+      await rpc('salvar_relatorio',args);
     }
     filtroInicio=filtroFim=d; await atualizar(); tela='lancamento'; alert('Dia salvo com sucesso.'); render();
   }catch(e){mostrarErro(e.message);}
