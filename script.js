@@ -16,6 +16,13 @@ const CAMPOS = [
   ['agendamentos','Agendamentos'],['visitas','Visitas'],
   ['propostas','Propostas'],['vendas','Vendas']
 ];
+const CONVERSOES = [
+  ['conv_neg','Interações → Negociações','interacoes','negociacoes'],
+  ['conv_agend','Negociações → Agendamentos','negociacoes','agendamentos'],
+  ['conv_visita','Agendamentos → Visitas','agendamentos','visitas'],
+  ['conv_prop','Visitas → Propostas','visitas','propostas'],
+  ['conv_venda','Propostas → Vendas','propostas','vendas']
+];
 const PERIODOS = ['12:00','15:00','18:00','21:00'];
 const CHAVE_RANK = ['vendas','propostas','visitas','agendamentos','negociacoes','interacoes'];
 const DIAS_SEMANA = [['seg','Seg'],['ter','Ter'],['qua','Qua'],['qui','Qui'],['sex','Sex'],['sab','Sáb'],['dom','Dom']];
@@ -81,6 +88,17 @@ function totalPeriodoCorretor(corretorId,modo,dataRef){
 }
 function br(d){ if(!d)return ''; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function n(v){ return Number(v||0); }
+function pct(num,den){
+  num=n(num); den=n(den);
+  if(den<=0) return '—';
+  return (num/den*100).toFixed(1).replace('.',',')+'%';
+}
+function celulasConversao(t){
+  return CONVERSOES.map(([id,label,de,para])=>`<td>${pct(t[para],t[de])}</td>`).join('');
+}
+function cabecalhoConversao(){
+  return CONVERSOES.map(([id,label])=>`<th title="${esc(label)}">${esc(label)}</th>`).join('');
+}
 function esc(v){ return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 function vazio(){ return Object.fromEntries(CAMPOS.map(([id])=>[id,0])); }
 function somar(lista){
@@ -224,18 +242,18 @@ function renderGerente(){
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
 }
 function tabelaRanking(rows){
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="rank">${i<3?['🥇','🥈','🥉'][i]:i+1}</td><td><b>${esc(r.corretor)}</b></td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}</tr>`).join('')}
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${cabecalhoConversao()}</tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="rank">${i<3?['🥇','🥈','🥉'][i]:i+1}</td><td><b>${esc(r.corretor)}</b></td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${celulasConversao(r)}</tr>`).join('')}
   </tbody></table></div>`;
 }
 function tabelaCorretores(equipe){
   const linhasDados=equipe.flatMap(c=>c.linhas).sort((a,b)=>a.data.localeCompare(b.data));
   const totaisPorPeriodo=PERIODOS.map(p=>[p,somar(linhasDados.filter(r=>r.periodo===p))]);
   const totalGeral=somar(linhasDados);
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th>Período</th><th>Data</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
-  ${linhasDados.map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="9" class="empty">Sem lançamentos no período.</td></tr>`}
-  ${linhasDados.length?totaisPorPeriodo.map(([p,t])=>`<tr class="rank"><td colspan="2">Total das ${p}</td><td></td>${CAMPOS.map(([id])=>`<td>${t[id]}</td>`).join('')}</tr>`).join(''):''}
-  ${linhasDados.length?`<tr class="rank"><td colspan="3">Total geral</td>${CAMPOS.map(([id])=>`<td>${totalGeral[id]}</td>`).join('')}</tr>`:''}
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th>Período</th><th>Data</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${cabecalhoConversao()}</tr></thead><tbody>
+  ${linhasDados.map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${celulasConversao(r)}</tr>`).join('')||`<tr><td colspan="${9+CONVERSOES.length}" class="empty">Sem lançamentos no período.</td></tr>`}
+  ${linhasDados.length?totaisPorPeriodo.map(([p,t])=>`<tr class="rank"><td colspan="2">Total das ${p}</td><td></td>${CAMPOS.map(([id])=>`<td>${t[id]}</td>`).join('')}${celulasConversao(t)}</tr>`).join(''):''}
+  ${linhasDados.length?`<tr class="rank"><td colspan="3">Total geral</td>${CAMPOS.map(([id])=>`<td>${totalGeral[id]}</td>`).join('')}${celulasConversao(totalGeral)}</tr>`:''}
   </tbody></table></div>`;
 }
 
