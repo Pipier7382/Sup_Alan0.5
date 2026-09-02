@@ -38,6 +38,7 @@ let corretorSelecionado = null;
 let semanaSelecionada = inicioDaSemana(dataHoje());
 let modoAgendaPeriodo = 'semana';
 let dataAgendaPeriodo = dataHoje();
+let filtroPeriodoGerencia = {};
 
 const app = document.getElementById('app');
 
@@ -258,9 +259,18 @@ function renderSuper(){
   });
   const total=somar(dados.relatorios||[]);
   const gerCards=Object.entries(gerMap).sort().map(([g,cs])=>{
-    const t=somar(cs.flatMap(c=>c.linhas));
+    const periodoSel=filtroPeriodoGerencia[g]||'total';
+    const linhasGerencia=cs.flatMap(c=>c.linhas);
+    const linhasFiltradas=periodoSel==='total'?linhasGerencia:linhasGerencia.filter(r=>r.periodo===periodoSel);
+    const t=somar(linhasFiltradas);
     const ranking=cs.map(c=>({corretor:c.nome,...somar(c.linhas)})).sort(ordenarRank);
-    return `<div class="panel manager-card" data-ger="${esc(g)}"><h2>${esc(g)}</h2>${cardsMini(t)}
+    const seletor=`<select class="select" data-periodo-ger="${esc(g)}" onclick="event.stopPropagation()">
+      <option value="total" ${periodoSel==='total'?'selected':''}>Total do dia</option>
+      ${PERIODOS.map(p=>`<option value="${p}" ${periodoSel===p?'selected':''}>${p}</option>`).join('')}
+    </select>`;
+    return `<div class="panel manager-card" data-ger="${esc(g)}"><h2>${esc(g)}</h2>
+      <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletor}</label></div>
+      ${cardsMini(t)}
       <div class="muted" style="margin-top:10px">1º ${esc(ranking[0]?.corretor||'—')} · ${n(ranking[0]?.vendas)} venda(s)</div></div>`;
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
@@ -269,6 +279,9 @@ function renderSuper(){
     ${painelAgendamentosPeriodo(corretores)}
     ${paineisAgendamentosSemanaGerente(corretores)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
+  document.querySelectorAll('[data-periodo-ger]').forEach(s=>{
+    s.onchange=e=>{ filtroPeriodoGerencia[e.target.dataset.periodoGer]=e.target.value; render(); };
+  });
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
