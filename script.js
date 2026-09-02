@@ -1,3 +1,11 @@
+/* =========================================================
+   SISTEMA ÚNICO DA SUPERINTENDÊNCIA
+   - login: tipo + nome + senha
+   - corretor: próprios dados
+   - gerente: própria equipe
+   - superintendente: todas as gerências
+   ========================================================= */
+
 const SUPABASE_URL = 'https://vuvukfpqiuhdjxlthklk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_umfrRCaQp-2dhZ-Fn1ANMw_F411sLKg';
 const { createClient } = window.supabase;
@@ -29,6 +37,7 @@ let corretorSelecionado = null;
 let semanaSelecionada = inicioDaSemana(dataHoje());
 let modoAgendaPeriodo = 'semana';
 let dataAgendaPeriodo = dataHoje();
+let usuariosAdmin = null;
 
 const app = document.getElementById('app');
 
@@ -185,10 +194,10 @@ function nav(){
     ? [['inicio','📊 Meu painel'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
     : usuario.tipo==='gerente'
     ? [['inicio','📊 Minha equipe'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
-    : [['inicio','🏢 Visão geral']];
+    : [['inicio','🏢 Visão geral'],['usuarios','👤 Usuários']];
   return `<div class="nav">${itens.map(([id,t])=>`<button class="${tela===id?'active':''}" data-nav="${id}">${t}</button>`).join('')}</div>`;
 }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{tela=b.dataset.nav;render();}); }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{tela=b.dataset.nav;if(tela==='usuarios')usuariosAdmin=null;render();}); }
 
 function filtros(){
   return `<div class="toolbar">
@@ -273,6 +282,117 @@ function renderSuper(){
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
+}
+
+async function carregarUsuariosAdmin(){
+  usuariosAdmin = await rpc('admin_listar_usuarios',{p_token:sessao});
+}
+function renderUsuarios(){
+  const gerencias = dados.gerencias||[];
+  const gerOptions = gerencias.map(g=>`<option value="${g.id}">${esc(g.nome)}</option>`).join('');
+  const rows = usuariosAdmin||[];
+  const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente'};
+
+  const formNovo = `<div class="panel">
+    <h2>Cadastrar usuário</h2>
+    <div class="form-grid">
+      <div class="field"><label>Tipo</label>
+        <select class="select" id="novoTipo">
+          <option value="corretor">Corretor</option>
+          <option value="gerente">Gerente</option>
+          <option value="superintendente">Superintendente</option>
+        </select>
+      </div>
+      <div class="field"><label>Nome</label><input id="novoNome" placeholder="Nome completo"></div>
+      <div class="field" id="campoGerenciaNovo"><label>Gerência</label><select class="select" id="novoGerencia">${gerOptions}</select></div>
+      <div class="field"><label>Senha</label><input id="novoSenha" type="text" placeholder="Mínimo 4 caracteres"></div>
+    </div>
+    <button class="btn" id="criarUsuario" style="margin-top:6px">Cadastrar</button>
+  </div>`;
+
+  const formGerencia = `<div class="panel">
+    <h2>Gerências</h2>
+    <p class="muted">Crie uma nova gerência antes de cadastrar corretores/gerentes para ela.</p>
+    <div class="form-grid">
+      <div class="field wide"><label>Nome da gerência</label><input id="novaGerenciaNome" placeholder="Ex.: Gerência 6"></div>
+    </div>
+    <button class="btn secondary" id="criarGerencia">Criar gerência</button>
+  </div>`;
+
+  const tabela = `<div class="panel">
+    <h2>Usuários cadastrados</h2>
+    <div class="table-wrap"><table class="table"><thead><tr>
+      <th>Nome</th><th>Tipo</th><th>Gerência</th><th>Status</th><th></th>
+    </tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td><b>${esc(r.nome)}</b></td>
+      <td>${tipoLabel[r.tipo]||r.tipo}</td>
+      <td>${esc(r.gerencia||'—')}</td>
+      <td><span class="badge" style="${r.ativo?'background:var(--green-600);color:#eafff5':'background:var(--red-600);color:#ffe9ec'}">${r.ativo?'Ativo':'Inativo'}</span></td>
+      <td style="display:flex;gap:14px">
+        <button class="danger-link" style="color:var(--gold-400)" data-senha="${r.id}">Redefinir senha</button>
+        <button class="danger-link" data-toggle="${r.id}" data-ativo="${r.ativo}">${r.ativo?'Desativar':'Ativar'}</button>
+      </td>
+    </tr>`).join('')||`<tr><td colspan="5" class="empty">Nenhum usuário encontrado.</td></tr>`}
+    </tbody></table></div>
+  </div>`;
+
+  shell(`${nav()}<h1>Usuários</h1>${formGerencia}${formNovo}${tabela}`);
+  bindNav();
+  bindUsuarios();
+}
+function bindUsuarios(){
+  const atualizaCampoGerencia=()=>{
+    const tipo=document.getElementById('novoTipo').value;
+    document.getElementById('campoGerenciaNovo').style.display = tipo==='superintendente' ? 'none' : '';
+  };
+  document.getElementById('novoTipo').addEventListener('change',atualizaCampoGerencia);
+  atualizaCampoGerencia();
+
+  document.getElementById('criarGerencia').onclick=async()=>{
+    try{
+      const nome=document.getElementById('novaGerenciaNome').value.trim();
+      if(!nome) throw new Error('Informe o nome da gerência.');
+      await rpc('admin_criar_gerencia',{p_token:sessao,p_nome:nome});
+      await atualizar(); tela='usuarios'; render();
+    }catch(e){mostrarErro(e.message);}
+  };
+
+  document.getElementById('criarUsuario').onclick=async()=>{
+    try{
+      const tipo=document.getElementById('novoTipo').value;
+      const nome=document.getElementById('novoNome').value.trim();
+      const senha=document.getElementById('novoSenha').value;
+      const gerenciaId=document.getElementById('novoGerencia').value;
+      if(!nome) throw new Error('Informe o nome.');
+      if(!senha||senha.length<4) throw new Error('A senha precisa ter pelo menos 4 caracteres.');
+      if(tipo==='corretor') await rpc('admin_criar_corretor',{p_token:sessao,p_nome:nome,p_gerencia_id:gerenciaId,p_senha:senha});
+      else if(tipo==='gerente') await rpc('admin_criar_gerente',{p_token:sessao,p_nome:nome,p_gerencia_id:gerenciaId,p_senha:senha});
+      else await rpc('admin_criar_superintendente',{p_token:sessao,p_nome:nome,p_senha:senha});
+      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
+      alert('Usuário cadastrado com sucesso.');
+    }catch(e){mostrarErro(e.message);}
+  };
+
+  document.querySelectorAll('[data-senha]').forEach(b=>b.onclick=async()=>{
+    const nova=prompt('Nova senha para este usuário (mínimo 4 caracteres):');
+    if(nova===null) return;
+    if(nova.length<4){mostrarErro('A senha precisa ter pelo menos 4 caracteres.');return;}
+    try{
+      await rpc('admin_redefinir_senha',{p_token:sessao,p_usuario_id:b.dataset.senha,p_nova_senha:nova});
+      alert('Senha redefinida com sucesso.');
+    }catch(e){mostrarErro(e.message);}
+  });
+
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=async()=>{
+    const ativoAtual=b.dataset.ativo==='true';
+    const acao=ativoAtual?'desativar':'ativar';
+    if(!confirm(`Tem certeza que deseja ${acao} este usuário?`)) return;
+    try{
+      await rpc('admin_definir_ativo',{p_token:sessao,p_usuario_id:b.dataset.toggle,p_ativo:!ativoAtual});
+      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
+    }catch(e){mostrarErro(e.message);}
+  });
 }
 
 function renderLancamento(){
@@ -498,7 +618,12 @@ function render(){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderCorretor();
   }else if(usuario.tipo==='gerente'){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderGerente();
-  }else renderSuper();
+  }else{
+    if(tela==='usuarios'){
+      if(!usuariosAdmin){ carregarUsuariosAdmin().then(render).catch(e=>{mostrarErro(e.message);tela='inicio';render();}); return; }
+      renderUsuarios();
+    } else renderSuper();
+  }
 }
 
 validarSessao();
