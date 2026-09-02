@@ -229,8 +229,11 @@ function tabelaRanking(rows){
   </tbody></table></div>`;
 }
 function tabelaCorretores(equipe){
+  const linhasDados=equipe.flatMap(c=>c.linhas).sort((a,b)=>a.data.localeCompare(b.data));
+  const total=somar(linhasDados);
   return `<div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th>Período</th><th>Data</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
-  ${equipe.flatMap(c=>c.linhas).sort((a,b)=>a.data.localeCompare(b.data)).map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="9" class="empty">Sem lançamentos no período.</td></tr>`}
+  ${linhasDados.map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="9" class="empty">Sem lançamentos no período.</td></tr>`}
+  ${linhasDados.length?`<tr class="rank"><td colspan="3">Total do período</td>${CAMPOS.map(([id])=>`<td>${total[id]}</td>`).join('')}</tr>`:''}
   </tbody></table></div>`;
 }
 
