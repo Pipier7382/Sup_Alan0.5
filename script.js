@@ -28,6 +28,8 @@ let filtroInicio = dataHoje();
 let filtroFim = dataHoje();
 let corretorSelecionado = null;
 let semanaSelecionada = inicioDaSemana(dataHoje());
+let modoAgendaPeriodo = 'semana';
+let dataAgendaPeriodo = dataHoje();
 
 const app = document.getElementById('app');
 
@@ -51,6 +53,31 @@ function vazioSemana(){ return Object.fromEntries(DIAS_SEMANA.map(([id])=>[id,0]
 function somaSemana(v){ return DIAS_SEMANA.reduce((s,[id])=>s+n(v?.[id]),0); }
 function agendamentoSemanaDe(corretorId,semana){
   return (dados?.agendamentos_semanais||[]).find(a=>a.corretor_id===corretorId&&a.semana_inicio===semana);
+}
+function diaSemanaKeyDeData(dataChave){
+  const [y,m,d]=dataChave.split('-').map(Number);
+  const mapa=['dom','seg','ter','qua','qui','sex','sab'];
+  return mapa[new Date(y,m-1,d).getDay()];
+}
+function totalPeriodoCorretor(corretorId,modo,dataRef){
+  if(modo==='dia'){
+    const semana=inicioDaSemana(dataRef);
+    const v=agendamentoSemanaDe(corretorId,semana)||vazioSemana();
+    return n(v[diaSemanaKeyDeData(dataRef)]);
+  }
+  if(modo==='semana'){
+    const semana=inicioDaSemana(dataRef);
+    return somaSemana(agendamentoSemanaDe(corretorId,semana)||vazioSemana());
+  }
+  const [y,m]=dataRef.split('-').map(Number);
+  let total=0;
+  (dados?.agendamentos_semanais||[]).filter(a=>a.corretor_id===corretorId).forEach(a=>{
+    DIAS_SEMANA.forEach(([id],idx)=>{
+      const [dy,dm]=somaDias(a.semana_inicio,idx).split('-').map(Number);
+      if(dy===y&&dm===m) total+=n(a[id]);
+    });
+  });
+  return total;
 }
 function br(d){ if(!d)return ''; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function n(v){ return Number(v||0); }
@@ -192,8 +219,9 @@ function renderGerente(){
   shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc((dados.corretores||[])[0]?.gerencia||'Minha equipe')}</h1>${filtros()}${cards(total)}
     <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda → Proposta → Visita → Agendamento → Negociação → Interação.</p>${tabelaRanking(ranked)}</div>
     <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
+    ${painelAgendamentosPeriodo(equipe)}
     ${paineisAgendamentosSemanaGerente(equipe)}`);
-  bindNav();bindFiltros();bindAgendamentosSemanaGerente();
+  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
 }
 function tabelaRanking(rows){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
@@ -224,8 +252,9 @@ function renderSuper(){
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
     <div class="grid2">${gerCards}</div>
     <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank))}</div>
+    ${painelAgendamentosPeriodo(corretores)}
     ${paineisAgendamentosSemanaGerente(corretores)}`);
-  bindNav();bindFiltros();bindAgendamentosSemanaGerente();
+  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
@@ -305,6 +334,43 @@ function bindAgendamentosSemana(){
       await atualizar();render();
     }catch(e){mostrarErro(e.message);}
   };
+}
+function painelAgendamentosPeriodo(equipe){
+  const modo=modoAgendaPeriodo, dataRef=dataAgendaPeriodo;
+  let faixaTexto='';
+  if(modo==='dia'){
+    faixaTexto=br(dataRef);
+  }else if(modo==='semana'){
+    const ini=inicioDaSemana(dataRef);
+    faixaTexto=`${br(ini)} a ${br(somaDias(ini,6))}`;
+  }else{
+    const [y,m]=dataRef.split('-').map(Number);
+    const ultimo=new Date(y,m,0).getDate();
+    faixaTexto=`${pad2(1)}/${pad2(m)}/${y} a ${pad2(ultimo)}/${pad2(m)}/${y}`;
+  }
+  let totalGeral=0;
+  const linhas=equipe.map(c=>{
+    const t=totalPeriodoCorretor(c.id,modo,dataRef);
+    totalGeral+=t;
+    return `<tr><td>${esc(c.nome)}</td><td style="text-align:right">${t}</td></tr>`;
+  }).join('');
+  return `<div class="panel">
+    <h2>Agendamentos totais por período</h2>
+    <div class="nav" style="margin-bottom:10px">
+      <button class="${modo==='dia'?'active':''}" data-modo-ag="dia">Diário</button>
+      <button class="${modo==='semana'?'active':''}" data-modo-ag="semana">Semanal</button>
+      <button class="${modo==='mes'?'active':''}" data-modo-ag="mes">Mensal</button>
+    </div>
+    <div class="toolbar" style="margin-bottom:10px"><label>Data de referência <input id="agendaPeriodoData" type="date" value="${dataRef}"></label></div>
+    <p class="muted">Período: ${faixaTexto}</p>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th style="text-align:right">Agendamentos</th></tr></thead>
+      <tbody>${linhas||'<tr><td colspan="2" class="empty">Nenhum corretor.</td></tr>'}<tr class="rank"><td>Total da equipe</td><td style="text-align:right">${totalGeral}</td></tr></tbody>
+    </table></div>
+  </div>`;
+}
+function bindAgendamentosPeriodo(){
+  document.querySelectorAll('[data-modo-ag]').forEach(b=>b.onclick=()=>{modoAgendaPeriodo=b.dataset.modoAg;render();});
+  document.getElementById('agendaPeriodoData').onchange=e=>{dataAgendaPeriodo=e.target.value;render();};
 }
 function paineisAgendamentosSemanaGerente(equipe){
   const semana=inicioDaSemana(semanaSelecionada);
