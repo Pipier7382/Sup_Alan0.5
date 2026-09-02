@@ -384,11 +384,15 @@ function paineisAgendamentosSemanaGerente(equipe){
       <div class="week-total">Total da semana: <strong>${somaSemana(v)}</strong></div>
     </div>`;
   }).join('');
+  const cartaoTotal=`<div class="week-card week-card-total"><h4>🏢 Total da equipe</h4>
+    <div class="week-days">${DIAS_SEMANA.map(([id,l])=>`<div class="week-day"><span>${l}</span><strong>${n(totalSemana[id])}</strong></div>`).join('')}</div>
+    <div class="week-total">Total da semana: <strong>${somaSemana(totalSemana)}</strong></div>
+  </div>`;
   return `<div class="panel">
     <h2>Agendamentos totais da semana</h2>
     <div class="form-grid"><div class="field"><label>Qualquer dia da semana desejada</label><input id="semanaGerData" type="date" value="${semanaSelecionada}"></div></div>
-    <p class="muted">Semana: ${faixa} · total da equipe: <b>${somaSemana(totalSemana)}</b></p>
-    <div class="week-cards">${cards||'<p class="empty">Nenhum corretor.</p>'}</div>
+    <p class="muted">Semana: ${faixa}</p>
+    <div class="week-cards">${cartaoTotal}${cards||'<p class="empty">Nenhum corretor.</p>'}</div>
   </div>`;
 }
 function bindAgendamentosSemanaGerente(){
