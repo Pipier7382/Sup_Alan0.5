@@ -119,6 +119,18 @@ async function rpc(nome,args){
   if(error) throw error;
   return data;
 }
+async function criarGerente(nomeGerencia,nomeGerente,senha){
+  return rpc('criar_gerente',{p_token:sessao,p_nome_gerencia:nomeGerencia,p_nome_gerente:nomeGerente,p_senha:senha});
+}
+async function excluirGerente(gerenciaId){
+  return rpc('excluir_gerente',{p_token:sessao,p_gerencia_id:gerenciaId});
+}
+async function criarCorretor(nome,senha){
+  return rpc('criar_corretor',{p_token:sessao,p_nome:nome,p_senha:senha});
+}
+async function excluirCorretor(corretorId){
+  return rpc('excluir_corretor',{p_token:sessao,p_corretor_id:corretorId});
+}
 
 async function login(tipo,nome,senha){
   const r=await rpc('login_usuario',{p_tipo:tipo,p_nome:nome,p_senha:senha});
@@ -221,6 +233,37 @@ function tabelaPeriodos(lista){
   </tbody></table></div>`;
 }
 
+function painelCorretoresEquipe(){
+  const lista=dados.corretores||[];
+  const linhas=lista.map(c=>`<tr><td>${esc(c.nome)}</td><td><button class="danger-link" data-del-corretor="${c.id}">Remover</button></td></tr>`).join('');
+  return `<div class="panel">
+    <h2>Corretores da equipe</h2>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th></th></tr></thead>
+      <tbody>${linhas||'<tr><td colspan="2" class="empty">Nenhum corretor cadastrado.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Nome do corretor</label><input id="novoCorretorNome" placeholder="Nome do corretor"></div>
+      <div class="field"><label>Senha</label><input id="novoCorretorSenha" type="password" placeholder="Senha de acesso"></div>
+    </div>
+    <button class="btn" id="addCorretor" style="margin-top:8px">Adicionar corretor</button>
+  </div>`;
+}
+function bindPainelCorretoresEquipe(){
+  document.querySelectorAll('[data-del-corretor]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover esse corretor da equipe? O acesso dele será desativado; o histórico de relatórios é mantido.'))return;
+    try{ await excluirCorretor(b.dataset.delCorretor); await atualizar(); render(); }
+    catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addCorretor')?.addEventListener('click',async()=>{
+    try{
+      const nn=document.getElementById('novoCorretorNome').value.trim();
+      const sn=document.getElementById('novoCorretorSenha').value;
+      if(!nn||!sn) throw new Error('Preencha o nome e a senha do corretor.');
+      await criarCorretor(nn,sn);
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+}
+
 function renderGerente(){
   const equipe=registrosPorCorretor();
   const ranked=equipe.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank);
@@ -228,9 +271,10 @@ function renderGerente(){
   shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc((dados.corretores||[])[0]?.gerencia||'Minha equipe')}</h1>${filtros()}${cards(total)}
     <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda → Proposta → Visita → Agendamento → Negociação → Interação.</p>${tabelaRanking(ranked)}</div>
     <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
+    ${painelCorretoresEquipe()}
     ${painelAgendamentosPeriodo(equipe)}
     ${paineisAgendamentosSemanaGerente(equipe)}`);
-  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
+  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelCorretoresEquipe();
 }
 function tabelaRanking(rows){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${CONVERSOES.map(c=>`<th>${c[2]}</th>`).join('')}</tr></thead><tbody>
@@ -247,6 +291,39 @@ function tabelaCorretores(equipe){
   ${linhasDados.length?totaisPorPeriodo.map(([p,t])=>`<tr class="rank"><td colspan="2">Total das ${p}</td><td></td>${CAMPOS.map(([id])=>`<td>${t[id]}</td>`).join('')}${CONVERSOES.map(([a,b])=>`<td>${pct(t[b],t[a])}</td>`).join('')}</tr>`).join(''):''}
   ${linhasDados.length?`<tr class="rank"><td colspan="3">Total geral</td>${CAMPOS.map(([id])=>`<td>${totalGeral[id]}</td>`).join('')}${CONVERSOES.map(([a,b])=>`<td>${pct(totalGeral[b],totalGeral[a])}</td>`).join('')}</tr>`:''}
   </tbody></table></div>`;
+}
+
+function painelGerentes(){
+  const lista=dados.gerentes||[];
+  const linhas=lista.map(g=>`<tr><td>${esc(g.gerencia)}</td><td>${esc(g.nome)}</td><td><button class="danger-link" data-del-gerente="${g.gerencia_id}">Remover</button></td></tr>`).join('');
+  return `<div class="panel">
+    <h2>Gerentes</h2>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Gerência</th><th>Gerente</th><th></th></tr></thead>
+      <tbody>${linhas||'<tr><td colspan="3" class="empty">Nenhum gerente cadastrado.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Nome da equipe/gerência</label><input id="novaGerenciaNome" placeholder="Ex: Gerência 6"></div>
+      <div class="field"><label>Nome do gerente</label><input id="novoGerenteNome" placeholder="Nome do gerente"></div>
+      <div class="field"><label>Senha</label><input id="novoGerenteSenha" type="password" placeholder="Senha de acesso"></div>
+    </div>
+    <button class="btn" id="addGerente" style="margin-top:8px">Adicionar gerente</button>
+  </div>`;
+}
+function bindPainelGerentes(){
+  document.querySelectorAll('[data-del-gerente]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover esse gerente e toda a equipe dele (corretores inclusive)? Os acessos serão desativados; o histórico de relatórios é mantido.'))return;
+    try{ await excluirGerente(b.dataset.delGerente); await atualizar(); render(); }
+    catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addGerente')?.addEventListener('click',async()=>{
+    try{
+      const ng=document.getElementById('novaGerenciaNome').value.trim();
+      const nn=document.getElementById('novoGerenteNome').value.trim();
+      const sn=document.getElementById('novoGerenteSenha').value;
+      if(!ng||!nn||!sn) throw new Error('Preencha o nome da equipe, o nome do gerente e a senha.');
+      await criarGerente(ng,nn,sn);
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
 }
 
 function renderSuper(){
@@ -274,11 +351,12 @@ function renderSuper(){
       <div class="muted" style="margin-top:10px">1º ${esc(ranking[0]?.corretor||'—')} · ${n(ranking[0]?.vendas)} venda(s)</div></div>`;
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
+    ${painelGerentes()}
     <div class="grid2">${gerCards}</div>
     <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank))}</div>
     ${painelAgendamentosPeriodo(corretores)}
     ${paineisAgendamentosSemanaGerente(corretores)}`);
-  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
+  bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelGerentes();
   document.querySelectorAll('[data-periodo-ger]').forEach(s=>{
     s.onchange=e=>{ filtroPeriodoGerencia[e.target.dataset.periodoGer]=e.target.value; render(); };
   });
