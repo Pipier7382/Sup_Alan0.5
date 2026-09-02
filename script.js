@@ -16,16 +16,17 @@ const CAMPOS = [
   ['agendamentos','Agendamentos'],['visitas','Visitas'],
   ['propostas','Propostas'],['vendas','Vendas']
 ];
-const CONVERSOES = [
-  ['conv_neg','Interações → Negociações','interacoes','negociacoes'],
-  ['conv_agend','Negociações → Agendamentos','negociacoes','agendamentos'],
-  ['conv_visita','Agendamentos → Visitas','agendamentos','visitas'],
-  ['conv_prop','Visitas → Propostas','visitas','propostas'],
-  ['conv_venda','Propostas → Vendas','propostas','vendas']
-];
 const PERIODOS = ['12:00','15:00','18:00','21:00'];
 const CHAVE_RANK = ['vendas','propostas','visitas','agendamentos','negociacoes','interacoes'];
 const DIAS_SEMANA = [['seg','Seg'],['ter','Ter'],['qua','Qua'],['qui','Qui'],['sex','Sex'],['sab','Sáb'],['dom','Dom']];
+const CONVERSOES = [
+  ['interacoes','negociacoes','Interações → Negociações'],
+  ['negociacoes','agendamentos','Negociações → Agendamentos'],
+  ['agendamentos','visitas','Agendamentos → Visitas'],
+  ['visitas','propostas','Visitas → Propostas'],
+  ['propostas','vendas','Propostas → Vendas'],
+];
+function pct(num,den){ return den?(num/den*100).toFixed(1)+'%':'—'; }
 
 let sessao = localStorage.getItem('sup_token') || '';
 let usuario = null;
@@ -37,7 +38,6 @@ let corretorSelecionado = null;
 let semanaSelecionada = inicioDaSemana(dataHoje());
 let modoAgendaPeriodo = 'semana';
 let dataAgendaPeriodo = dataHoje();
-let usuariosAdmin = null;
 
 const app = document.getElementById('app');
 
@@ -89,17 +89,6 @@ function totalPeriodoCorretor(corretorId,modo,dataRef){
 }
 function br(d){ if(!d)return ''; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function n(v){ return Number(v||0); }
-function pct(num,den){
-  num=n(num); den=n(den);
-  if(den<=0) return '—';
-  return (num/den*100).toFixed(1).replace('.',',')+'%';
-}
-function celulasConversao(t){
-  return CONVERSOES.map(([id,label,de,para])=>`<td>${pct(t[para],t[de])}</td>`).join('');
-}
-function cabecalhoConversao(){
-  return CONVERSOES.map(([id,label])=>`<th title="${esc(label)}">${esc(label)}</th>`).join('');
-}
 function esc(v){ return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 function vazio(){ return Object.fromEntries(CAMPOS.map(([id])=>[id,0])); }
 function somar(lista){
@@ -159,7 +148,7 @@ async function atualizar(){
 function renderLogin(){
   app.innerHTML=`<div class="login-page">
     <div class="login-card">
-      <div class="brand"><div class="logo">⭐</div><h1>Relatório da Superintendência</h1><p>Acesso ao sistema</p></div>
+      <div class="brand"><div class="logo">🐊</div><h1>Relatório da Superintendência</h1><p>Acesso ao sistema</p></div>
       <form id="loginForm">
         <div class="field"><label>Você é</label>
           <select id="tipo"><option value="corretor">Corretor</option><option value="gerente">Gerente</option><option value="superintendente">Superintendente</option></select>
@@ -183,7 +172,7 @@ function renderLogin(){
 function shell(content){
   const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente'}[usuario.tipo];
   app.innerHTML=`<div class="shell"><header class="topbar">
-    <div><div class="title">⭐ Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}</div></div>
+    <div><div class="title">🐊 Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}</div></div>
     <div class="userbox"><span>${esc(usuario.nome)}</span><button class="btn secondary" id="sair">Sair</button></div>
   </header><main class="layout">${content}</main></div>`;
   document.getElementById('sair').onclick=logout;
@@ -194,10 +183,10 @@ function nav(){
     ? [['inicio','📊 Meu painel'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
     : usuario.tipo==='gerente'
     ? [['inicio','📊 Minha equipe'],['lancamento','✏️ Lançamento'],['agenda','📅 Agendamentos']]
-    : [['inicio','🏢 Visão geral'],['usuarios','👤 Usuários']];
+    : [['inicio','🏢 Visão geral']];
   return `<div class="nav">${itens.map(([id,t])=>`<button class="${tela===id?'active':''}" data-nav="${id}">${t}</button>`).join('')}</div>`;
 }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{tela=b.dataset.nav;if(tela==='usuarios')usuariosAdmin=null;render();}); }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{tela=b.dataset.nav;render();}); }
 
 function filtros(){
   return `<div class="toolbar">
@@ -243,18 +232,19 @@ function renderGerente(){
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();
 }
 function tabelaRanking(rows){
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${cabecalhoConversao()}</tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="rank">${i<3?['🥇','🥈','🥉'][i]:i+1}</td><td><b>${esc(r.corretor)}</b></td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${celulasConversao(r)}</tr>`).join('')}
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${CONVERSOES.map(c=>`<th>${c[2]}</th>`).join('')}</tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="rank">${i<3?['🥇','🥈','🥉'][i]:i+1}</td><td><b>${esc(r.corretor)}</b></td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${CONVERSOES.map(([a,b])=>`<td>${pct(r[b],r[a])}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div>`;
 }
 function tabelaCorretores(equipe){
   const linhasDados=equipe.flatMap(c=>c.linhas).sort((a,b)=>a.data.localeCompare(b.data));
   const totaisPorPeriodo=PERIODOS.map(p=>[p,somar(linhasDados.filter(r=>r.periodo===p))]);
   const totalGeral=somar(linhasDados);
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th>Período</th><th>Data</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${cabecalhoConversao()}</tr></thead><tbody>
-  ${linhasDados.map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${celulasConversao(r)}</tr>`).join('')||`<tr><td colspan="${9+CONVERSOES.length}" class="empty">Sem lançamentos no período.</td></tr>`}
-  ${linhasDados.length?totaisPorPeriodo.map(([p,t])=>`<tr class="rank"><td colspan="2">Total das ${p}</td><td></td>${CAMPOS.map(([id])=>`<td>${t[id]}</td>`).join('')}${celulasConversao(t)}</tr>`).join(''):''}
-  ${linhasDados.length?`<tr class="rank"><td colspan="3">Total geral</td>${CAMPOS.map(([id])=>`<td>${totalGeral[id]}</td>`).join('')}${celulasConversao(totalGeral)}</tr>`:''}
+  const convVazia=CONVERSOES.map(()=>'<td></td>').join('');
+  return `<div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th>Período</th><th>Data</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${CONVERSOES.map(c=>`<th>${c[2]}</th>`).join('')}</tr></thead><tbody>
+  ${linhasDados.map(r=>`<tr><td>${esc(r.corretor)}</td><td>${r.periodo}</td><td>${br(r.data)}</td>${CAMPOS.map(([id])=>`<td>${r[id]}</td>`).join('')}${convVazia}</tr>`).join('')||`<tr><td colspan="${9+CONVERSOES.length}" class="empty">Sem lançamentos no período.</td></tr>`}
+  ${linhasDados.length?totaisPorPeriodo.map(([p,t])=>`<tr class="rank"><td colspan="2">Total das ${p}</td><td></td>${CAMPOS.map(([id])=>`<td>${t[id]}</td>`).join('')}${CONVERSOES.map(([a,b])=>`<td>${pct(t[b],t[a])}</td>`).join('')}</tr>`).join(''):''}
+  ${linhasDados.length?`<tr class="rank"><td colspan="3">Total geral</td>${CAMPOS.map(([id])=>`<td>${totalGeral[id]}</td>`).join('')}${CONVERSOES.map(([a,b])=>`<td>${pct(totalGeral[b],totalGeral[a])}</td>`).join('')}</tr>`:''}
   </tbody></table></div>`;
 }
 
@@ -282,131 +272,6 @@ function renderSuper(){
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
-}
-
-async function carregarUsuariosAdmin(){
-  usuariosAdmin = await rpc('admin_listar_usuarios',{p_token:sessao});
-}
-function renderUsuarios(){
-  const gerencias = dados.gerencias||[];
-  const gerOptions = gerencias.map(g=>`<option value="${g.id}">${esc(g.nome)}</option>`).join('');
-  const rows = usuariosAdmin||[];
-  const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente'};
-
-  const formNovo = `<div class="panel">
-    <h2>Cadastrar usuário</h2>
-    <div class="form-grid">
-      <div class="field"><label>Tipo</label>
-        <select class="select" id="novoTipo">
-          <option value="corretor">Corretor</option>
-          <option value="gerente">Gerente</option>
-          <option value="superintendente">Superintendente</option>
-        </select>
-      </div>
-      <div class="field"><label>Nome</label><input id="novoNome" placeholder="Nome completo"></div>
-      <div class="field" id="campoGerenciaNovo"><label>Gerência</label><select class="select" id="novoGerencia">${gerOptions}</select></div>
-      <div class="field"><label>Senha</label><input id="novoSenha" type="text" placeholder="Mínimo 4 caracteres"></div>
-    </div>
-    <button class="btn" id="criarUsuario" style="margin-top:6px">Cadastrar</button>
-  </div>`;
-
-  const formGerencia = `<div class="panel">
-    <h2>Gerências</h2>
-    <p class="muted">Crie uma nova gerência antes de cadastrar corretores/gerentes para ela.</p>
-    <div class="form-grid">
-      <div class="field wide"><label>Nome da gerência</label><input id="novaGerenciaNome" placeholder="Ex.: Gerência 6"></div>
-    </div>
-    <button class="btn secondary" id="criarGerencia">Criar gerência</button>
-  </div>`;
-
-  const tabela = `<div class="panel">
-    <h2>Usuários cadastrados</h2>
-    <div class="table-wrap"><table class="table"><thead><tr>
-      <th>Nome</th><th>Tipo</th><th>Gerência</th><th>Status</th><th></th>
-    </tr></thead><tbody>
-    ${rows.map(r=>`<tr>
-      <td><b>${esc(r.nome)}</b></td>
-      <td>${tipoLabel[r.tipo]||r.tipo}</td>
-      <td>${esc(r.gerencia||'—')}</td>
-      <td><span class="badge" style="${r.ativo?'background:var(--green-600);color:#eafff5':'background:var(--red-600);color:#ffe9ec'}">${r.ativo?'Ativo':'Inativo'}</span></td>
-      <td style="display:flex;gap:14px;flex-wrap:wrap">
-        <button class="danger-link" style="color:var(--gold-400)" data-senha="${r.id}">Redefinir senha</button>
-        <button class="danger-link" data-toggle="${r.id}" data-ativo="${r.ativo}">${r.ativo?'Desativar':'Ativar'}</button>
-        ${r.id!==usuario.id?`<button class="danger-link" data-excluir="${r.id}" data-tipo="${r.tipo}" data-nome="${esc(r.nome)}">Excluir</button>`:''}
-      </td>
-    </tr>`).join('')||`<tr><td colspan="5" class="empty">Nenhum usuário encontrado.</td></tr>`}
-    </tbody></table></div>
-  </div>`;
-
-  shell(`${nav()}<h1>Usuários</h1>${formGerencia}${formNovo}${tabela}`);
-  bindNav();
-  bindUsuarios();
-}
-function bindUsuarios(){
-  const atualizaCampoGerencia=()=>{
-    const tipo=document.getElementById('novoTipo').value;
-    document.getElementById('campoGerenciaNovo').style.display = tipo==='superintendente' ? 'none' : '';
-  };
-  document.getElementById('novoTipo').addEventListener('change',atualizaCampoGerencia);
-  atualizaCampoGerencia();
-
-  document.getElementById('criarGerencia').onclick=async()=>{
-    try{
-      const nome=document.getElementById('novaGerenciaNome').value.trim();
-      if(!nome) throw new Error('Informe o nome da gerência.');
-      await rpc('admin_criar_gerencia',{p_token:sessao,p_nome:nome});
-      await atualizar(); tela='usuarios'; render();
-    }catch(e){mostrarErro(e.message);}
-  };
-
-  document.getElementById('criarUsuario').onclick=async()=>{
-    try{
-      const tipo=document.getElementById('novoTipo').value;
-      const nome=document.getElementById('novoNome').value.trim();
-      const senha=document.getElementById('novoSenha').value;
-      const gerenciaId=document.getElementById('novoGerencia').value;
-      if(!nome) throw new Error('Informe o nome.');
-      if(!senha||senha.length<4) throw new Error('A senha precisa ter pelo menos 4 caracteres.');
-      if(tipo==='corretor') await rpc('admin_criar_corretor',{p_token:sessao,p_nome:nome,p_gerencia_id:gerenciaId,p_senha:senha});
-      else if(tipo==='gerente') await rpc('admin_criar_gerente',{p_token:sessao,p_nome:nome,p_gerencia_id:gerenciaId,p_senha:senha});
-      else await rpc('admin_criar_superintendente',{p_token:sessao,p_nome:nome,p_senha:senha});
-      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
-      alert('Usuário cadastrado com sucesso.');
-    }catch(e){mostrarErro(e.message);}
-  };
-
-  document.querySelectorAll('[data-senha]').forEach(b=>b.onclick=async()=>{
-    const nova=prompt('Nova senha para este usuário (mínimo 4 caracteres):');
-    if(nova===null) return;
-    if(nova.length<4){mostrarErro('A senha precisa ter pelo menos 4 caracteres.');return;}
-    try{
-      await rpc('admin_redefinir_senha',{p_token:sessao,p_usuario_id:b.dataset.senha,p_nova_senha:nova});
-      alert('Senha redefinida com sucesso.');
-    }catch(e){mostrarErro(e.message);}
-  });
-
-  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=async()=>{
-    const ativoAtual=b.dataset.ativo==='true';
-    const acao=ativoAtual?'desativar':'ativar';
-    if(!confirm(`Tem certeza que deseja ${acao} este usuário?`)) return;
-    try{
-      await rpc('admin_definir_ativo',{p_token:sessao,p_usuario_id:b.dataset.toggle,p_ativo:!ativoAtual});
-      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
-    }catch(e){mostrarErro(e.message);}
-  });
-
-  document.querySelectorAll('[data-excluir]').forEach(b=>b.onclick=async()=>{
-    const nome=b.dataset.nome, ehCorretor=b.dataset.tipo==='corretor';
-    const aviso=ehCorretor
-      ? `Excluir "${nome}" vai apagar PERMANENTEMENTE o cadastro dele e TODOS os lançamentos e agendamentos já registrados. Isso não pode ser desfeito.\n\nSe quiser só bloquear o acesso mantendo o histórico, use "Desativar" em vez de excluir.\n\nDeseja realmente excluir?`
-      : `Excluir "${nome}" vai apagar PERMANENTEMENTE o cadastro dele. Isso não pode ser desfeito.\n\nDeseja realmente excluir?`;
-    if(!confirm(aviso)) return;
-    try{
-      await rpc('admin_excluir_usuario',{p_token:sessao,p_usuario_id:b.dataset.excluir});
-      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
-      alert('Usuário excluído.');
-    }catch(e){mostrarErro(e.message);}
-  });
 }
 
 function renderLancamento(){
@@ -632,12 +497,7 @@ function render(){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderCorretor();
   }else if(usuario.tipo==='gerente'){
     if(tela==='lancamento')renderLancamento(); else if(tela==='agenda')renderAgenda(); else renderGerente();
-  }else{
-    if(tela==='usuarios'){
-      if(!usuariosAdmin){ carregarUsuariosAdmin().then(render).catch(e=>{mostrarErro(e.message);tela='inicio';render();}); return; }
-      renderUsuarios();
-    } else renderSuper();
-  }
+  }else renderSuper();
 }
 
 validarSessao();
