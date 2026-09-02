@@ -329,9 +329,10 @@ function renderUsuarios(){
       <td>${tipoLabel[r.tipo]||r.tipo}</td>
       <td>${esc(r.gerencia||'—')}</td>
       <td><span class="badge" style="${r.ativo?'background:var(--green-600);color:#eafff5':'background:var(--red-600);color:#ffe9ec'}">${r.ativo?'Ativo':'Inativo'}</span></td>
-      <td style="display:flex;gap:14px">
+      <td style="display:flex;gap:14px;flex-wrap:wrap">
         <button class="danger-link" style="color:var(--gold-400)" data-senha="${r.id}">Redefinir senha</button>
         <button class="danger-link" data-toggle="${r.id}" data-ativo="${r.ativo}">${r.ativo?'Desativar':'Ativar'}</button>
+        ${r.id!==usuario.id?`<button class="danger-link" data-excluir="${r.id}" data-tipo="${r.tipo}" data-nome="${esc(r.nome)}">Excluir</button>`:''}
       </td>
     </tr>`).join('')||`<tr><td colspan="5" class="empty">Nenhum usuário encontrado.</td></tr>`}
     </tbody></table></div>
@@ -391,6 +392,19 @@ function bindUsuarios(){
     try{
       await rpc('admin_definir_ativo',{p_token:sessao,p_usuario_id:b.dataset.toggle,p_ativo:!ativoAtual});
       await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
+    }catch(e){mostrarErro(e.message);}
+  });
+
+  document.querySelectorAll('[data-excluir]').forEach(b=>b.onclick=async()=>{
+    const nome=b.dataset.nome, ehCorretor=b.dataset.tipo==='corretor';
+    const aviso=ehCorretor
+      ? `Excluir "${nome}" vai apagar PERMANENTEMENTE o cadastro dele e TODOS os lançamentos e agendamentos já registrados. Isso não pode ser desfeito.\n\nSe quiser só bloquear o acesso mantendo o histórico, use "Desativar" em vez de excluir.\n\nDeseja realmente excluir?`
+      : `Excluir "${nome}" vai apagar PERMANENTEMENTE o cadastro dele. Isso não pode ser desfeito.\n\nDeseja realmente excluir?`;
+    if(!confirm(aviso)) return;
+    try{
+      await rpc('admin_excluir_usuario',{p_token:sessao,p_usuario_id:b.dataset.excluir});
+      await atualizar(); await carregarUsuariosAdmin(); tela='usuarios'; render();
+      alert('Usuário excluído.');
     }catch(e){mostrarErro(e.message);}
   });
 }
