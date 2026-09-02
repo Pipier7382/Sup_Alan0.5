@@ -55,3 +55,34 @@ Propostas e Vendas).
   do mesmo projeto (é seguro rodar de novo se precisar). Lançamentos
   já existentes ficam com Leads Novos e Pré-vendas = 0 automaticamente.
 - Suba o `script.js` novo no GitHub Pages.
+
+## Novidades: perfil "Suporte" (acesso master) + várias superintendências
+
+- Agora existe um 4º tipo de login: **Suporte**. É um acesso master que
+  enxerga e gerencia TODAS as superintendências, gerências e corretores
+  do sistema — não fica preso a uma hierarquia só.
+- No painel do Suporte dá para: criar/remover superintendências
+  (cada uma com seu próprio superintendente), e dentro de cada uma,
+  criar/remover gerências (com o gerente) e corretores.
+- O sistema deixou de ter "1 superintendência só": agora cada
+  superintendência tem seu próprio conjunto isolado de gerências e
+  corretores. A hierarquia que já existia (Alan + 5 gerências) virou
+  automaticamente a primeira superintendência cadastrada
+  ("Superintendência Principal").
+- **Importante**: login continua sendo só por tipo + nome + senha
+  (sem escolher a empresa antes). Isso significa que nomes de
+  superintendente/gerente/corretor precisam ser únicos em todo o
+  sistema, mesmo entre superintendências diferentes — evite repetir
+  "Gerente 1" em duas empresas, por exemplo.
+- "Remover" superintendência desativa o superintendente e toda a
+  equipe dela (gerentes e corretores); "Remover" gerência desativa o
+  gerente e os corretores dela. Em todos os casos o histórico de
+  relatórios e agendamentos é mantido — nada é apagado.
+
+### Como instalar essa parte
+
+1. NÃO rode o `supabase.sql` original de novo — apagaria os dados.
+2. Rode apenas o `supabase_suporte.sql` uma vez no SQL Editor do
+   mesmo projeto (é seguro rodar de novo se precisar).
+3. Suba o `script.js` novo no GitHub Pages.
+4. Teste com: **Suporte / 11111**.
