@@ -350,7 +350,8 @@ function renderSuper(){
   const cardTotalGeral=`<div class="panel manager-card manager-card-total"><h2>🏢 Total geral (todas as gerências)</h2>
     <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletorTotal}</label></div>
     ${cardsMini(tTotal)}
-    <div class="muted" style="margin-top:10px">1º ${esc(rankingGeral[0]?.corretor||'—')} · ${n(rankingGeral[0]?.vendas)} venda(s)</div></div>`;
+    <div class="muted" style="margin-top:10px">1º ${esc(rankingGeral[0]?.corretor||'—')} · ${n(rankingGeral[0]?.vendas)} venda(s)</div>
+    <button class="btn secondary" id="btnCopiarTotalGeral" style="margin-top:14px" onclick="event.stopPropagation()">📋 Copiar relatório</button></div>`;
 
   const gerCards=Object.entries(gerMap).sort().map(([g,cs])=>{
     const periodoSel=filtroPeriodoGerencia[g]||'total';
@@ -374,12 +375,49 @@ function renderSuper(){
     ${painelAgendamentosPeriodo(corretores)}
     ${paineisAgendamentosSemanaGerente(corretores)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelGerentes();
+  bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,filtroInicio,filtroFim);
   document.querySelectorAll('[data-periodo-ger]').forEach(s=>{
     s.onchange=e=>{ filtroPeriodoGerencia[e.target.dataset.periodoGer]=e.target.value; render(); };
   });
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
+}
+
+function textoTotalGeral(t,periodoLabel,rankingGeral,dataIni,dataFim){
+  const faixa=dataIni===dataFim?br(dataIni):`${br(dataIni)} a ${br(dataFim)}`;
+  const linhas=CAMPOS.map(([id,l])=>`${l}: ${n(t[id])}`).join('\n');
+  const top=rankingGeral[0];
+  return `🏢 TOTAL GERAL (TODAS AS GERÊNCIAS)\n`+
+    `Período: ${faixa} — ${periodoLabel}\n\n`+
+    `${linhas}\n\n`+
+    `1º lugar: ${top?.corretor||'—'} (${top?.gerencia||'—'}) — ${n(top?.vendas)} venda(s)`;
+}
+async function copiarTexto(texto,btn){
+  const textoOriginal=btn.textContent;
+  try{
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(texto);
+    }else{
+      const ta=document.createElement('textarea');
+      ta.value=texto; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    btn.textContent='✅ Copiado!';
+  }catch(e){
+    btn.textContent='❌ Falha ao copiar';
+  }
+  setTimeout(()=>{btn.textContent=textoOriginal;},2000);
+}
+function bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,dataIni,dataFim){
+  const btn=document.getElementById('btnCopiarTotalGeral');
+  if(!btn) return;
+  const periodoLabel=periodoSelTotal==='total'?'Total do dia':periodoSelTotal;
+  btn.onclick=e=>{
+    e.stopPropagation();
+    copiarTexto(textoTotalGeral(tTotal,periodoLabel,rankingGeral,dataIni,dataFim),btn);
+  };
 }
 
 function renderLancamento(){
