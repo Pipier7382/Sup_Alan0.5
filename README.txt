@@ -18,7 +18,7 @@ Arquivos:
 - Corretores: Corretor 1.1 até Corretor 5.10 / 11111
 
 ## Regra do ranking
-Venda > Proposta > Visita > Agendamento > Negociação > Interação.
+Venda 100% > Pré-venda > Proposta > Visita > Agendamento > Negociação > Interação > Lead Novo.
 
 Observação: esta versão usa uma sessão própria armazenada em token e funções SECURITY DEFINER no Supabase, sem expor acesso direto às tabelas para o frontend.
 
@@ -42,3 +42,16 @@ Observação: esta versão usa uma sessão própria armazenada em token e funç�
    do mesmo projeto Supabase. Ele só adiciona o que falta (é seguro
    rodar de novo se precisar).
 3. Suba o `script.js` novo no repositório do GitHub Pages.
+
+## Novidades: campos do relatório
+
+O relatório agora tem 8 campos, nesta ordem: Leads Novos, Interações,
+Negociações, Agendamentos, Visitas, Propostas, Pré-vendas e Vendas 100%
+(antes eram só 6: Interações, Negociações, Agendamentos, Visitas,
+Propostas e Vendas).
+
+- NÃO rode o `supabase.sql` original de novo — apagaria os dados.
+- Rode apenas o `supabase_leads_prevendas.sql` uma vez no SQL Editor
+  do mesmo projeto (é seguro rodar de novo se precisar). Lançamentos
+  já existentes ficam com Leads Novos e Pré-vendas = 0 automaticamente.
+- Suba o `script.js` novo no GitHub Pages.
