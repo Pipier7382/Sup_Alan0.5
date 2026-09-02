@@ -18,6 +18,7 @@ const CAMPOS = [
 ];
 const PERIODOS = ['12:00','15:00','18:00','21:00'];
 const CHAVE_RANK = ['vendas','propostas','visitas','agendamentos','negociacoes','interacoes'];
+const DIAS_SEMANA = [['seg','Seg'],['ter','Ter'],['qua','Qua'],['qui','Qui'],['sex','Sex'],['sab','Sáb'],['dom','Dom']];
 
 let sessao = localStorage.getItem('sup_token') || '';
 let usuario = null;
@@ -26,10 +27,31 @@ let tela = 'inicio';
 let filtroInicio = dataHoje();
 let filtroFim = dataHoje();
 let corretorSelecionado = null;
+let semanaSelecionada = inicioDaSemana(dataHoje());
 
 const app = document.getElementById('app');
 
 function dataHoje(){ return new Date().toISOString().slice(0,10); }
+function pad2(n){ return n<10?'0'+n:''+n; }
+function inicioDaSemana(dataChave){
+  const [y,m,d]=dataChave.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  const dia=dt.getDay();
+  const offset=dia===0?6:dia-1;
+  dt.setDate(dt.getDate()-offset);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`;
+}
+function somaDias(dataChave,qtd){
+  const [y,m,d]=dataChave.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  dt.setDate(dt.getDate()+qtd);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`;
+}
+function vazioSemana(){ return Object.fromEntries(DIAS_SEMANA.map(([id])=>[id,0])); }
+function somaSemana(v){ return DIAS_SEMANA.reduce((s,[id])=>s+n(v?.[id]),0); }
+function agendamentoSemanaDe(corretorId,semana){
+  return (dados?.agendamentos_semanais||[]).find(a=>a.corretor_id===corretorId&&a.semana_inicio===semana);
+}
 function br(d){ if(!d)return ''; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function n(v){ return Number(v||0); }
 function esc(v){ return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
@@ -169,8 +191,9 @@ function renderGerente(){
   const total=somar(dados.relatorios||[]);
   shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc((dados.corretores||[])[0]?.gerencia||'Minha equipe')}</h1>${filtros()}${cards(total)}
     <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda → Proposta → Visita → Agendamento → Negociação → Interação.</p>${tabelaRanking(ranked)}</div>
-    <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>`);
-  bindNav();bindFiltros();
+    <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
+    ${paineisAgendamentosSemanaGerente(equipe)}`);
+  bindNav();bindFiltros();bindAgendamentosSemanaGerente();
 }
 function tabelaRanking(rows){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
@@ -200,8 +223,9 @@ function renderSuper(){
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
     <div class="grid2">${gerCards}</div>
-    <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank))}</div>`);
-  bindNav();bindFiltros();
+    <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank))}</div>
+    ${paineisAgendamentosSemanaGerente(corretores)}`);
+  bindNav();bindFiltros();bindAgendamentosSemanaGerente();
 }
 function cardsMini(t){
   return `<div class="cards" style="margin:0">${CAMPOS.map(([id,l])=>`<div class="card"><div class="label">${l}</div><div class="value" style="font-size:22px">${t[id]}</div></div>`).join('')}</div>`;
@@ -253,6 +277,58 @@ async function excluirDia(){
   }catch(e){mostrarErro(e.message);}
 }
 
+function painelAgendamentosSemana(){
+  const semana=inicioDaSemana(semanaSelecionada);
+  const faixa=`${br(semana)} a ${br(somaDias(semana,6))}`;
+  const existente=agendamentoSemanaDe(corretorSelecionado,semana)||vazioSemana();
+  return `<div class="panel">
+    <h2>Agendamentos totais da semana</h2>
+    <p class="muted">Informe quantos agendamentos você tem em cada dia dessa semana.</p>
+    <div class="form-grid">
+      <div class="field"><label>Qualquer dia da semana desejada</label><input id="semanaData" type="date" value="${semanaSelecionada}"></div>
+    </div>
+    <p class="muted">Semana: ${faixa}</p>
+    <div class="period-grid">
+      ${DIAS_SEMANA.map(([id,l])=>`<div class="field"><label>${l}</label><input min="0" type="number" id="sem_${id}" value="${n(existente[id])}"></div>`).join('')}
+    </div>
+    <button class="btn" id="salvarSemana" style="margin-top:14px">Salvar agendamentos da semana</button>
+  </div>`;
+}
+function bindAgendamentosSemana(){
+  document.getElementById('semanaData').onchange=e=>{semanaSelecionada=e.target.value;render();};
+  document.getElementById('salvarSemana').onclick=async()=>{
+    try{
+      const semana=inicioDaSemana(semanaSelecionada);
+      const vals=DIAS_SEMANA.map(([id])=>n(document.getElementById('sem_'+id).value));
+      await rpc('salvar_agendamento_semana',{p_token:sessao,p_corretor_id:corretorSelecionado,p_semana:semana,
+        p_seg:vals[0],p_ter:vals[1],p_qua:vals[2],p_qui:vals[3],p_sex:vals[4],p_sab:vals[5],p_dom:vals[6]});
+      await atualizar();render();
+    }catch(e){mostrarErro(e.message);}
+  };
+}
+function paineisAgendamentosSemanaGerente(equipe){
+  const semana=inicioDaSemana(semanaSelecionada);
+  const faixa=`${br(semana)} a ${br(somaDias(semana,6))}`;
+  const totalSemana=vazioSemana();
+  const cards=equipe.map(c=>{
+    const v=agendamentoSemanaDe(c.id,semana)||vazioSemana();
+    DIAS_SEMANA.forEach(([id])=>totalSemana[id]+=n(v[id]));
+    return `<div class="week-card"><h4>${esc(c.nome)}</h4>
+      <div class="week-days">${DIAS_SEMANA.map(([id,l])=>`<div class="week-day"><span>${l}</span><strong>${n(v[id])}</strong></div>`).join('')}</div>
+      <div class="week-total">Total da semana: <strong>${somaSemana(v)}</strong></div>
+    </div>`;
+  }).join('');
+  return `<div class="panel">
+    <h2>Agendamentos totais da semana</h2>
+    <div class="form-grid"><div class="field"><label>Qualquer dia da semana desejada</label><input id="semanaGerData" type="date" value="${semanaSelecionada}"></div></div>
+    <p class="muted">Semana: ${faixa} · total da equipe: <b>${somaSemana(totalSemana)}</b></p>
+    <div class="week-cards">${cards||'<p class="empty">Nenhum corretor.</p>'}</div>
+  </div>`;
+}
+function bindAgendamentosSemanaGerente(){
+  document.getElementById('semanaGerData').onchange=e=>{semanaSelecionada=e.target.value;render();};
+}
+
 function renderAgenda(){
   const corretores=dados.corretores||[];
   if(usuario.tipo==='corretor') corretorSelecionado=usuario.corretor_id;
@@ -266,8 +342,10 @@ function renderAgenda(){
     <div class="field"><label>Cliente</label><input id="agendaCliente" placeholder="Nome do cliente"></div>
     <div class="field"><label>Telefone</label><input id="agendaTelefone" placeholder="Telefone"></div></div>
     <button class="btn" id="addAgenda">Adicionar agendamento</button></div>
+    ${painelAgendamentosSemana()}
     <div class="panel"><h2>Agenda cadastrada</h2>${tabelaAgenda(itens)}</div>`);
   bindNav();
+  bindAgendamentosSemana();
   document.getElementById('agendaCorretor')?.addEventListener('change',e=>{corretorSelecionado=e.target.value;render();});
   document.getElementById('agendaData').onchange=async e=>{filtroInicio=filtroFim=e.target.value;await atualizar();render();};
   document.getElementById('addAgenda').onclick=async()=>{
