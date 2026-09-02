@@ -1,11 +1,3 @@
-/* =========================================================
-   SISTEMA ÚNICO DA SUPERINTENDÊNCIA
-   - login: tipo + nome + senha
-   - corretor: próprios dados
-   - gerente: própria equipe
-   - superintendente: todas as gerências
-   ========================================================= */
-
 const SUPABASE_URL = 'https://vuvukfpqiuhdjxlthklk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_umfrRCaQp-2dhZ-Fn1ANMw_F411sLKg';
 const { createClient } = window.supabase;
