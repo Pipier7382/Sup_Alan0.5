@@ -337,6 +337,21 @@ function renderSuper(){
     gerMap[g].push(c);
   });
   const total=somar(dados.relatorios||[]);
+  const rankingGeral=corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank);
+
+  const periodoSelTotal=filtroPeriodoGerencia['__TOTAL__']||'total';
+  const linhasTotal=corretores.flatMap(c=>c.linhas);
+  const linhasTotalFiltradas=periodoSelTotal==='total'?linhasTotal:linhasTotal.filter(r=>r.periodo===periodoSelTotal);
+  const tTotal=somar(linhasTotalFiltradas);
+  const seletorTotal=`<select class="select" data-periodo-ger="__TOTAL__" onclick="event.stopPropagation()">
+    <option value="total" ${periodoSelTotal==='total'?'selected':''}>Total do dia</option>
+    ${PERIODOS.map(p=>`<option value="${p}" ${periodoSelTotal===p?'selected':''}>${p}</option>`).join('')}
+  </select>`;
+  const cardTotalGeral=`<div class="panel manager-card manager-card-total"><h2>🏢 Total geral (todas as gerências)</h2>
+    <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletorTotal}</label></div>
+    ${cardsMini(tTotal)}
+    <div class="muted" style="margin-top:10px">1º ${esc(rankingGeral[0]?.corretor||'—')} · ${n(rankingGeral[0]?.vendas)} venda(s)</div></div>`;
+
   const gerCards=Object.entries(gerMap).sort().map(([g,cs])=>{
     const periodoSel=filtroPeriodoGerencia[g]||'total';
     const linhasGerencia=cs.flatMap(c=>c.linhas);
@@ -354,8 +369,8 @@ function renderSuper(){
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
     ${painelGerentes()}
-    <div class="grid2">${gerCards}</div>
-    <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(corretores.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank))}</div>
+    <div class="grid2">${cardTotalGeral}${gerCards}</div>
+    <div class="panel"><h2>Ranking geral de corretores</h2>${tabelaRanking(rankingGeral)}</div>
     ${painelAgendamentosPeriodo(corretores)}
     ${paineisAgendamentosSemanaGerente(corretores)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelGerentes();
