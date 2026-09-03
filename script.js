@@ -64,6 +64,15 @@ function somaDias(dataChave,qtd){
   dt.setDate(dt.getDate()+qtd);
   return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`;
 }
+function rangeDiario(){ const h=dataHoje(); return [h,h]; }
+function rangeSemanal(){ const h=dataHoje(); const ini=inicioDaSemana(h); return [ini,somaDias(ini,6)]; }
+function rangeMensal(){ const h=dataHoje(); return [h.slice(0,7)+'-01',h]; }
+function rangePeriodo(periodo){
+  return periodo==='diario'?rangeDiario():periodo==='semanal'?rangeSemanal():rangeMensal();
+}
+function rotuloPeriodo(periodo){
+  return periodo==='diario'?'Diário':periodo==='semanal'?'Semanal':'Mensal';
+}
 function vazioSemana(){ return Object.fromEntries(DIAS_SEMANA.map(([id])=>[id,0])); }
 function somaSemana(v){ return DIAS_SEMANA.reduce((s,[id])=>s+n(v?.[id]),0); }
 function agendamentoSemanaDe(corretorId,semana){
@@ -293,6 +302,11 @@ function painelMetricasCorretor(corretorId,nomeCorretor){
   const linhasReceb=recebimentos.map(r=>`<tr><td>${br(r.data)}</td><td>${esc(r.descricao||'—')}</td><td>R$ ${Number(r.valor).toFixed(2)}</td><td><button class="danger-link" data-del-receb="${r.id}">Remover</button></td></tr>`).join('');
   return `<div class="panel" style="margin-top:20px">
     <h2>📐 Funil — ${esc(nomeCorretor)}</h2>
+    <div class="toolbar" style="margin-bottom:14px">
+      <button class="btn secondary" data-copiar-funil-periodo data-ids="${corretorId}" data-titulo="${esc(nomeCorretor)}" data-periodo="diario">📅 Copiar diário</button>
+      <button class="btn secondary" data-copiar-funil-periodo data-ids="${corretorId}" data-titulo="${esc(nomeCorretor)}" data-periodo="semanal">🗓️ Copiar semanal</button>
+      <button class="btn secondary" data-copiar-funil-periodo data-ids="${corretorId}" data-titulo="${esc(nomeCorretor)}" data-periodo="mensal">📆 Copiar mensal</button>
+    </div>
     ${svgFunil(dadosFunilCorretor(corretorId))}
   </div>
   <div class="panel" style="margin-top:20px">
@@ -314,6 +328,15 @@ function painelMetricasCorretor(corretorId,nomeCorretor){
     </div>
     <button class="btn" id="addRecebimento" style="margin-top:8px">Adicionar recebimento</button>
   </div>`;
+}
+function bindCopiarFunilPeriodo(){
+  document.querySelectorAll('[data-copiar-funil-periodo]').forEach(b=>{
+    b.onclick=async e=>{
+      e.stopPropagation();
+      const ids=b.dataset.ids.split(',');
+      await copiarFunilPeriodo(ids,b.dataset.titulo,b.dataset.periodo,b);
+    };
+  });
 }
 function bindFunilCorretor(corretorId){
   document.getElementById('mesMetricasInput')?.addEventListener('change',e=>{ if(e.target.value){mesMetricas=e.target.value; render();} });
@@ -340,6 +363,7 @@ function bindFunilCorretor(corretorId){
     try{ await excluirRecebimento(b.dataset.delReceb); await atualizar(); render(); }
     catch(e){ mostrarErro(e.message); }
   });
+  bindCopiarFunilPeriodo();
 }
 
 function painelCorretoresEquipe(){
@@ -387,7 +411,13 @@ function renderGerente(){
   const nomeEquipe=(dados.corretores||[])[0]?.gerencia||'Minha equipe';
   shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc(nomeEquipe)}</h1>${filtros()}${cards(total)}
     <div class="panel"><h2>📐 Funil de conversão</h2><p class="muted">Copie o funil completo da equipe, pronto para enviar no WhatsApp.</p>
-      <button class="btn secondary" id="btnCopiarFunilEquipe">📐 Copiar funil</button></div>
+      <button class="btn secondary" id="btnCopiarFunilEquipe" style="margin-bottom:10px">📐 Copiar funil (período filtrado)</button>
+      <div class="toolbar">
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${equipe.map(c=>c.id).join(',')}" data-titulo="${esc(nomeEquipe)}" data-periodo="diario">📅 Diário</button>
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${equipe.map(c=>c.id).join(',')}" data-titulo="${esc(nomeEquipe)}" data-periodo="semanal">🗓️ Semanal</button>
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${equipe.map(c=>c.id).join(',')}" data-titulo="${esc(nomeEquipe)}" data-periodo="mensal">📆 Mensal</button>
+      </div>
+    </div>
     <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda 100% → Pré-venda → Proposta → Visita → Agendamento → Negociação → Interação → Lead Novo.</p>${tabelaRanking(ranked)}</div>
     <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
     ${painelCorretoresEquipe()}
@@ -395,6 +425,7 @@ function renderGerente(){
     ${paineisAgendamentosSemanaGerente(equipe)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelCorretoresEquipe();
   bindCopiarFunilEquipe(total,filtroInicio,filtroFim,nomeEquipe);
+  bindCopiarFunilPeriodo();
 }
 function bindCopiarFunilEquipe(total,dataIni,dataFim,titulo){
   const btn=document.getElementById('btnCopiarFunilEquipe');
@@ -496,7 +527,12 @@ function renderSuper(){
       <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletor}</label></div>
       ${cardsMini(t)}
       <div class="muted" style="margin-top:10px">1º ${esc(ranking[0]?.corretor||'—')} · ${n(ranking[0]?.vendas)} venda(s)</div>
-      <button class="btn secondary" data-copiar-funil-ger="${esc(g)}" style="margin-top:14px" onclick="event.stopPropagation()">📐 Copiar funil</button></div>`;
+      <button class="btn secondary" data-copiar-funil-ger="${esc(g)}" style="margin-top:14px" onclick="event.stopPropagation()">📐 Copiar funil</button>
+      <div class="toolbar" style="margin-top:10px" onclick="event.stopPropagation()">
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${cs.map(c=>c.id).join(',')}" data-titulo="${esc(g)}" data-periodo="diario">📅 Diário</button>
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${cs.map(c=>c.id).join(',')}" data-titulo="${esc(g)}" data-periodo="semanal">🗓️ Semanal</button>
+        <button class="btn secondary" data-copiar-funil-periodo data-ids="${cs.map(c=>c.id).join(',')}" data-titulo="${esc(g)}" data-periodo="mensal">📆 Mensal</button>
+      </div></div>`;
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
     ${painelGerentes()}
@@ -507,6 +543,7 @@ function renderSuper(){
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelGerentes();
   bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,filtroInicio,filtroFim);
   bindCopiarFunilTotal(tTotal,periodoSelTotal,filtroInicio,filtroFim);
+  bindCopiarFunilPeriodo();
   document.querySelectorAll('[data-copiar-funil-ger]').forEach(b=>{
     b.onclick=e=>{
       e.stopPropagation();
@@ -545,8 +582,8 @@ function textoFunil(titulo,t,periodoLabel,dataIni,dataFim){
     `${linhas}\n\n`+
     `Conversão geral (Leads Novos → Vendas 100%): ${pct(t.vendas,t.leads_novos)}`;
 }
-async function copiarTexto(texto,btn){
-  const textoOriginal=btn.textContent;
+async function copiarTexto(texto,btn,rotuloOriginal){
+  const textoOriginal=rotuloOriginal??btn.textContent;
   try{
     if(navigator.clipboard&&window.isSecureContext){
       await navigator.clipboard.writeText(texto);
@@ -561,6 +598,21 @@ async function copiarTexto(texto,btn){
     btn.textContent='❌ Falha ao copiar';
   }
   setTimeout(()=>{btn.textContent=textoOriginal;},2000);
+}
+async function copiarFunilPeriodo(corretorIds,titulo,periodo,btn){
+  const [ini,fim]=rangePeriodo(periodo);
+  const rotulo=rotuloPeriodo(periodo);
+  const textoOriginal=btn.textContent;
+  btn.textContent='⏳ Buscando...';
+  try{
+    const r=await rpc('dados_painel',{p_token:sessao,p_inicio:ini,p_fim:fim});
+    const lista=(r.relatorios||[]).filter(x=>corretorIds.includes(x.corretor_id));
+    const t=somar(lista);
+    await copiarTexto(textoFunil(`${titulo} — ${rotulo}`,t,rotulo,ini,fim),btn,textoOriginal);
+  }catch(e){
+    btn.textContent='❌ Erro ao buscar';
+    setTimeout(()=>{btn.textContent=textoOriginal;},2000);
+  }
 }
 function bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,dataIni,dataFim){
   const btn=document.getElementById('btnCopiarTotalGeral');
