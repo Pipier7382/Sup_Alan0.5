@@ -30,6 +30,22 @@ const CONVERSOES = [
 ];
 function pct(num,den){ return den?(num/den*100).toFixed(1)+'%':'—'; }
 
+let monitorEntregaTimer = null;
+function minutosDoHorario(h){ const [hora,min]=h.split(':').map(Number); return hora*60+min; }
+function minutosAgora(){ const a=new Date(); return a.getHours()*60+a.getMinutes(); }
+function statusDeHoje(corretorId){ return (dados?.status_diario||[]).find(s=>s.corretor_id===corretorId&&s.data===dataHoje())||null; }
+function corretorEstaOnline(corretorId){ return statusDeHoje(corretorId)?.online===true; }
+function periodosEmCobranca(){ const agora=minutosAgora(); return PERIODOS.filter(p=>agora>=minutosDoHorario(p)-10); }
+function jaEntregouRelatorio(corretorId,periodo,data=dataHoje()){
+  return (dados?.entregas_relatorios||[]).some(e=>e.corretor_id===corretorId&&e.data===data&&e.periodo===periodo);
+}
+function pendenciasDoCorretor(corretorId){
+  if(!corretorEstaOnline(corretorId)) return [];
+  return periodosEmCobranca().filter(p=>!jaEntregouRelatorio(corretorId,p));
+}
+function textoPendencia(corretorId){ const p=pendenciasDoCorretor(corretorId); return p.length?`Pendente: ${p.join(', ')}`:''; }
+async function salvarStatusCorretor(online){ return rpc('definir_status_corretor',{p_token:sessao,p_data:dataHoje(),p_online:online}); }
+
 let sessao = localStorage.getItem('sup_token') || '';
 let usuario = null;
 let dados = null;
@@ -47,6 +63,16 @@ let funilExpandido = null;
 let mesMetricas = new Date().toISOString().slice(0,7);
 
 const app = document.getElementById('app');
+
+function instalarEstilosDeAlerta(){
+  if(document.getElementById('estilos-status-relatorio'))return;
+  const style=document.createElement('style'); style.id='estilos-status-relatorio';
+  style.textContent=`
+    .status-diario{display:flex;align-items:center;justify-content:space-between;gap:16px}.status-online{color:#55d692;font-weight:800}.status-offline{color:#9aa8bd;font-weight:800}.status-pendente{color:#ff7181;font-weight:800}.corretor-pendente td{background:rgba(190,35,55,.16)}.corretor-pendente td:first-child{color:#ff7181;font-weight:800}.shell.alerta-relatorio .topbar{border-bottom:2px solid #f04e62;box-shadow:0 0 26px rgba(240,78,98,.35)}.shell.alerta-relatorio .layout{box-shadow:inset 0 0 0 2px rgba(240,78,98,.38)}.badge-alerta{background:#a92739;color:#fff}
+  `;
+  document.head.appendChild(style);
+}
+instalarEstilosDeAlerta();
 
 function dataHoje(){ return new Date().toISOString().slice(0,10); }
 function pad2(n){ return n<10?'0'+n:''+n; }
@@ -168,9 +194,11 @@ async function login(tipo,nome,senha){
   localStorage.setItem('sup_token',sessao);
   await carregarDados();
   render();
+  iniciarMonitorDeEntregas();
 }
 async function logout(){
   try{ if(sessao) await rpc('logout_usuario',{p_token:sessao}); }catch(e){}
+  clearInterval(monitorEntregaTimer);
   localStorage.removeItem('sup_token'); sessao=''; usuario=null; dados=null; renderLogin();
 }
 async function validarSessao(){
@@ -179,10 +207,15 @@ async function validarSessao(){
     usuario=await rpc('me_usuario',{p_token:sessao});
     await carregarDados();
     render();
+    iniciarMonitorDeEntregas();
   }catch(e){ localStorage.removeItem('sup_token');sessao='';renderLogin(); }
 }
 async function carregarDados(){
-  dados=await rpc('dados_painel',{p_token:sessao,p_inicio:filtroInicio,p_fim:filtroFim});
+  const [painel,acompanhamento]=await Promise.all([
+    rpc('dados_painel',{p_token:sessao,p_inicio:filtroInicio,p_fim:filtroFim}),
+    rpc('status_e_entregas_do_dia',{p_token:sessao,p_data:dataHoje()})
+  ]);
+  dados={...painel,status_diario:acompanhamento.status_diario||[],entregas_relatorios:acompanhamento.entregas_relatorios||[]};
 }
 async function atualizar(){
   await carregarDados(); render();
@@ -213,9 +246,10 @@ function renderLogin(){
 }
 
 function shell(content){
+  const alertaPessoal=usuario?.tipo==='corretor'&&pendenciasDoCorretor(usuario.corretor_id).length>0;
   const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente',suporte:'Suporte'}[usuario.tipo];
   const badgeMaster=usuario.tipo==='suporte'?' <span class="badge">Acesso master</span>':'';
-  app.innerHTML=`<div class="shell"><header class="topbar">
+  app.innerHTML=`<div class="shell ${alertaPessoal?'alerta-relatorio':''}"><header class="topbar">
     <div><div class="title">🐊 Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}${badgeMaster}</div></div>
     <div class="userbox"><span>${esc(usuario.nome)}</span><button class="btn secondary" id="sair">Sair</button></div>
   </header><main class="layout">${content}</main></div>`;
@@ -253,12 +287,24 @@ function bindFiltros(){
   document.getElementById('hoje')?.addEventListener('click',async()=>{filtroInicio=filtroFim=dataHoje();await atualizar();});
 }
 
+function painelStatusCorretor(){
+  const online=corretorEstaOnline(usuario.corretor_id);
+  const pendencia=textoPendencia(usuario.corretor_id);
+  return `<div class="panel status-diario"><div><h2>Status de hoje</h2><div class="${online?'status-online':'status-offline'}">${online?'● Online — recebendo alertas de relatório':'● Offline — não entra na cobrança de hoje'}</div>${pendencia?`<div class="status-pendente">${esc(pendencia)}</div>`:''}</div><label class="btn secondary" style="cursor:pointer"><input id="statusOnlineHoje" type="checkbox" ${online?'checked':''}> Estou online hoje</label></div>`;
+}
+function bindStatusCorretor(){
+  document.getElementById('statusOnlineHoje')?.addEventListener('change',async e=>{
+    try{ await salvarStatusCorretor(e.target.checked); await atualizar(); render(); }
+    catch(err){ mostrarErro(err.message); e.target.checked=!e.target.checked; }
+  });
+}
+
 function renderCorretor(){
   const lista=(dados.relatorios||[]).filter(r=>r.corretor_id===usuario.corretor_id);
   const t=somar(lista);
-  shell(`${nav()}<h1>Meu painel</h1>${filtros()}${cards(t)}
+  shell(`${nav()}<h1>Meu painel</h1>${painelStatusCorretor()}${filtros()}${cards(t)}
     <div class="panel"><h2>Resumo por período</h2>${tabelaPeriodos(lista)}</div>`);
-  bindNav();bindFiltros();
+  bindNav();bindFiltros();bindStatusCorretor();
 }
 function tabelaPeriodos(lista){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>Período</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>
@@ -382,6 +428,17 @@ function painelCorretoresEquipe(){
     <button class="btn" id="addCorretor" style="margin-top:8px">Adicionar corretor</button>
   </div>${blocoFunil}`;
 }
+function painelCorretoresEquipe(){
+  const lista=dados.corretores||[];
+  const linhas=lista.map(c=>{
+    const online=corretorEstaOnline(c.id),pendencia=textoPendencia(c.id);
+    return `<tr class="${pendencia?'corretor-pendente':''}"><td>${esc(c.nome)}<div class="${online?'status-online':'status-offline'}" style="font-size:12px">${online?'Online':'Offline'}${pendencia?` · <span class="status-pendente">${esc(pendencia)}</span>`:''}</div></td><td style="white-space:normal"><button class="btn secondary" data-funil="${c.id}" style="padding:6px 12px;font-size:12px;margin-right:8px">${funilExpandido===c.id?'Ocultar funil':'Ver funil'}</button><button class="danger-link" data-del-corretor="${c.id}">Remover</button></td></tr>`;
+  }).join('');
+  const alvo=lista.find(c=>c.id===funilExpandido);
+  const blocoFunil=alvo?painelMetricasCorretor(alvo.id,alvo.nome):'';
+  return `<div class="panel"><h2>Corretores da equipe</h2><div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th></th></tr></thead><tbody>${linhas||'<tr><td colspan="2" class="empty">Nenhum corretor cadastrado.</td></tr>'}</tbody></table></div><div class="form-grid" style="margin-top:16px"><div class="field"><label>Nome do corretor</label><input id="novoCorretorNome" placeholder="Nome do corretor"></div><div class="field"><label>Senha</label><input id="novoCorretorSenha" type="password" placeholder="Senha de acesso"></div></div><button class="btn" id="addCorretor" style="margin-top:8px">Adicionar corretor</button></div>${blocoFunil}`;
+}
+
 function bindPainelCorretoresEquipe(){
   document.querySelectorAll('[data-funil]').forEach(b=>b.onclick=()=>{
     funilExpandido=funilExpandido===b.dataset.funil?null:b.dataset.funil;
@@ -804,6 +861,48 @@ async function excluirDia(){
   }catch(e){mostrarErro(e.message);}
 }
 
+function renderLancamento(){
+  const corretores=dados.corretores||[];
+  const meu=usuario.tipo==='corretor'?corretores.find(c=>c.id===usuario.corretor_id):null;
+  if(usuario.tipo==='corretor')corretorSelecionado=meu?.id;
+  if(!corretorSelecionado)corretorSelecionado=corretores[0]?.id;
+  const sel=corretores.map(c=>`<option value="${c.id}" ${c.id===corretorSelecionado?'selected':''}>${esc(c.nome)}${usuario.tipo==='superintendente'||usuario.tipo==='gerente'?' — '+esc(c.gerencia):''}</option>`).join('');
+  const d=filtroInicio;
+  const linhas=(dados.relatorios||[]).filter(r=>r.corretor_id===corretorSelecionado&&r.data===d);
+  const byP=Object.fromEntries(linhas.map(r=>[r.periodo,r]));
+  shell(`${nav()}<h1>Lançamento diário</h1><div class="panel"><div class="form-grid"><div class="field"><label>Corretor</label><select class="select" id="selCorretor" ${usuario.tipo==='corretor'?'disabled':''}>${sel}</select></div><div class="field"><label>Data</label><input id="dataLanc" type="date" value="${d}"></div></div><div class="period-grid">${PERIODOS.map(p=>periodoForm(p,byP[p])).join('')}</div><button class="btn danger" id="excluirDia" style="margin-top:14px">Excluir dia</button></div>`);
+  bindNav();
+  document.getElementById('selCorretor')?.addEventListener('change',e=>{corretorSelecionado=e.target.value;render();});
+  document.getElementById('dataLanc').onchange=async e=>{filtroInicio=filtroFim=e.target.value;await atualizar();tela='lancamento';render();};
+  document.querySelectorAll('[data-enviar-periodo]').forEach(b=>b.onclick=()=>salvarPeriodo(b.dataset.enviarPeriodo));
+  document.getElementById('excluirDia').onclick=excluirDia;
+}
+function periodoForm(p,r){
+  const entregue=jaEntregouRelatorio(corretorSelecionado,p,filtroInicio);
+  const pendente=filtroInicio===dataHoje()&&pendenciasDoCorretor(corretorSelecionado).includes(p);
+  return `<div class="period ${pendente?'corretor-pendente':''}"><h4>${p} ${entregue?'<span class="badge">Enviado</span>':pendente?'<span class="badge badge-alerta">Pendente</span>':''}</h4>${CAMPOS.map(([id,l])=>`<div class="metric-row"><label>${l}</label><input min="0" type="number" id="${id}_${p.replace(':','')}" value="${n(r?.[id])}"></div>`).join('')}<button class="btn" type="button" data-enviar-periodo="${p}" style="margin-top:10px">Enviar relatório das ${p}</button></div>`;
+}
+async function salvarPeriodo(periodo){
+  try{
+    const c=document.getElementById('selCorretor').value,d=document.getElementById('dataLanc').value;
+    const vals=CAMPOS.map(([id])=>n(document.getElementById(`${id}_${periodo.replace(':','')}`).value));
+    const args={p_token:sessao,p_corretor_id:c,p_data:d,p_periodo:periodo};
+    CAMPOS.forEach(([id],idx)=>args['p_'+id]=vals[idx]);
+    await rpc('salvar_relatorio',args);
+    await rpc('registrar_entrega_relatorio',{p_token:sessao,p_corretor_id:c,p_data:d,p_periodo:periodo});
+    filtroInicio=filtroFim=d;await atualizar();alert(`Relatório das ${periodo} enviado com sucesso.`);render();
+  }catch(e){mostrarErro(e.message);}
+}
+async function excluirDia(){
+  if(!confirm('Excluir todos os lançamentos desse corretor nessa data?'))return;
+  try{
+    const c=document.getElementById('selCorretor').value,d=document.getElementById('dataLanc').value;
+    await rpc('excluir_dia',{p_token:sessao,p_corretor_id:c,p_data:d});
+    await rpc('excluir_entregas_do_dia',{p_token:sessao,p_corretor_id:c,p_data:d});
+    await atualizar();render();
+  }catch(e){mostrarErro(e.message);}
+}
+
 function painelAgendamentosSemana(){
   const semana=inicioDaSemana(semanaSelecionada);
   const faixa=`${br(semana)} a ${br(somaDias(semana,6))}`;
@@ -973,6 +1072,15 @@ function tabelaAgenda(itens,permiteExcluir){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Telefone</th><th>Corretor</th>${permiteExcluir?'<th></th>':''}</tr></thead><tbody>
   ${itens.map(a=>`<tr><td>${br(a.data)}</td><td>${String(a.horario).slice(0,5)}</td><td>${esc(a.cliente)}</td><td>${esc(a.telefone||'')}</td><td>${esc(a.corretor)}</td>${permiteExcluir?`<td><button class="danger-link" data-del-ag="${a.id}">Excluir</button></td>`:''}</tr>`).join('')||`<tr><td colspan="${permiteExcluir?6:5}" class="empty">Nenhum agendamento.</td></tr>`}
   </tbody></table></div>`;
+}
+
+function iniciarMonitorDeEntregas(){
+  clearInterval(monitorEntregaTimer);
+  if(!usuario||usuario.tipo!=='gerente')return;
+  monitorEntregaTimer=setInterval(async()=>{
+    if(tela!=='inicio')return;
+    try{await atualizar();}catch(e){console.warn(e);}
+  },30000);
 }
 
 function render(){
