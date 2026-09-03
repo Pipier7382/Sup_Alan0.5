@@ -43,6 +43,8 @@ let dataAgendaPeriodo = dataHoje();
 let filtroPeriodoGerencia = {};
 let supSelecionada = null;
 let gerenciaSuporteSelecionada = null;
+let funilExpandido = null;
+let mesMetricas = new Date().toISOString().slice(0,7);
 
 const app = document.getElementById('app');
 
@@ -140,6 +142,15 @@ async function criarSuperintendencia(nomeSuperintendencia,nomeSuperintendente,se
 }
 async function excluirSuperintendencia(superintendenciaId){
   return rpc('excluir_superintendencia',{p_token:sessao,p_superintendencia_id:superintendenciaId});
+}
+async function salvarMetricasExtras(corretorId,mes,contratosAssinados,possibilidadesVenda){
+  return rpc('salvar_metricas_extras',{p_token:sessao,p_corretor_id:corretorId,p_mes:mes,p_contratos_assinados:contratosAssinados,p_possibilidades_venda:possibilidadesVenda});
+}
+async function salvarRecebimento(corretorId,data,valor,descricao){
+  return rpc('salvar_recebimento',{p_token:sessao,p_corretor_id:corretorId,p_data:data,p_valor:valor,p_descricao:descricao||null});
+}
+async function excluirRecebimento(id){
+  return rpc('excluir_recebimento',{p_token:sessao,p_id:id});
 }
 
 async function login(tipo,nome,senha){
@@ -246,9 +257,96 @@ function tabelaPeriodos(lista){
   </tbody></table></div>`;
 }
 
+function svgFunil(etapas){
+  const max=Math.max(1,...etapas.map(e=>e[1]));
+  const W=560,padTop=14,padBot=14,bandH=42,H=padTop+padBot+bandH*etapas.length;
+  const minW=54,maxW=W-60;
+  const cores=['#d4af37','#e3c168','#f0d896','#4fc38a','#2fa876','#1f7c58','#8b98b0','#cdd6e6','#c23d50','#e0596b'];
+  let y=padTop,rows='';
+  etapas.forEach((e,i)=>{
+    const propTop=i===0?1:(etapas[i-1][1]/max);
+    const propBot=e[1]/max;
+    const wTop=minW+(maxW-minW)*propTop;
+    const wBot=minW+(maxW-minW)*propBot;
+    const xTopL=(W-wTop)/2,xTopR=xTopL+wTop;
+    const xBotL=(W-wBot)/2,xBotR=xBotL+wBot;
+    const yTop=y,yBot=y+bandH-4;
+    rows+=`<polygon points="${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}" fill="${cores[i%cores.length]}" opacity="0.92"/>`;
+    rows+=`<text x="${W/2}" y="${(yTop+yBot)/2+4}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#050b16">${esc(e[0])}: ${e[1]}</text>`;
+    y+=bandH;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-width:560px;display:block;margin:0 auto">${rows}</svg>`;
+}
+function dadosFunilCorretor(corretorId){
+  const lista=(dados.relatorios||[]).filter(r=>r.corretor_id===corretorId);
+  const t=somar(lista);
+  const extras=(dados.metricas_extras||[]).find(m=>m.corretor_id===corretorId&&m.mes===mesMetricas+'-01')||{};
+  return CAMPOS.map(([id,label])=>[label,t[id]]).concat([
+    ['Contratos assinados',n(extras.contratos_assinados)],
+    ['Possibilidades de venda',n(extras.possibilidades_venda)]
+  ]);
+}
+function painelMetricasCorretor(corretorId,nomeCorretor){
+  const extras=(dados.metricas_extras||[]).find(m=>m.corretor_id===corretorId&&m.mes===mesMetricas+'-01')||{};
+  const recebimentos=(dados.recebimentos||[]).filter(r=>r.corretor_id===corretorId&&r.data.slice(0,7)===mesMetricas);
+  const totalRecebido=recebimentos.reduce((s,r)=>s+Number(r.valor||0),0);
+  const linhasReceb=recebimentos.map(r=>`<tr><td>${br(r.data)}</td><td>${esc(r.descricao||'—')}</td><td>R$ ${Number(r.valor).toFixed(2)}</td><td><button class="danger-link" data-del-receb="${r.id}">Remover</button></td></tr>`).join('');
+  return `<div class="panel" style="margin-top:20px">
+    <h2>📐 Funil — ${esc(nomeCorretor)}</h2>
+    ${svgFunil(dadosFunilCorretor(corretorId))}
+  </div>
+  <div class="panel" style="margin-top:20px">
+    <h3>Métricas mensais</h3>
+    <div class="toolbar" style="margin-bottom:14px"><label>Mês <input type="month" id="mesMetricasInput" value="${mesMetricas}"></label></div>
+    <div class="form-grid">
+      <div class="field"><label>Contratos assinados</label><input type="number" min="0" id="contratosAssinados" value="${n(extras.contratos_assinados)}"></div>
+      <div class="field"><label>Possibilidades de venda</label><input type="number" min="0" id="possibilidadesVenda" value="${n(extras.possibilidades_venda)}"></div>
+    </div>
+    <button class="btn" id="salvarMetricas" style="margin-top:8px">Salvar métricas do mês</button>
+
+    <h3 style="margin-top:24px">Recebimentos do mês <span class="badge">Total: R$ ${totalRecebido.toFixed(2)}</span></h3>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Data</th><th>Descrição</th><th>Valor</th><th></th></tr></thead>
+      <tbody>${linhasReceb||'<tr><td colspan="4" class="empty">Nenhum recebimento lançado neste mês.</td></tr>'}</tbody></table></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="field"><label>Data</label><input type="date" id="novoRecebData" value="${dataHoje()}"></div>
+      <div class="field wide"><label>Descrição (opcional)</label><input id="novoRecebDescricao" placeholder="Ex: Comissão venda apto 302"></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" min="0" step="0.01" id="novoRecebValor" placeholder="0,00"></div>
+    </div>
+    <button class="btn" id="addRecebimento" style="margin-top:8px">Adicionar recebimento</button>
+  </div>`;
+}
+function bindFunilCorretor(corretorId){
+  document.getElementById('mesMetricasInput')?.addEventListener('change',e=>{ if(e.target.value){mesMetricas=e.target.value; render();} });
+  document.getElementById('salvarMetricas')?.addEventListener('click',async()=>{
+    try{
+      const ca=Number(document.getElementById('contratosAssinados').value||0);
+      const pv=Number(document.getElementById('possibilidadesVenda').value||0);
+      await salvarMetricasExtras(corretorId,mesMetricas+'-01',ca,pv);
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+  document.getElementById('addRecebimento')?.addEventListener('click',async()=>{
+    try{
+      const d=document.getElementById('novoRecebData').value;
+      const desc=document.getElementById('novoRecebDescricao').value.trim();
+      const v=Number(document.getElementById('novoRecebValor').value||0);
+      if(!d||!v) throw new Error('Preencha a data e o valor do recebimento.');
+      await salvarRecebimento(corretorId,d,v,desc);
+      await atualizar(); render();
+    }catch(e){ mostrarErro(e.message); }
+  });
+  document.querySelectorAll('[data-del-receb]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remover esse recebimento?'))return;
+    try{ await excluirRecebimento(b.dataset.delReceb); await atualizar(); render(); }
+    catch(e){ mostrarErro(e.message); }
+  });
+}
+
 function painelCorretoresEquipe(){
   const lista=dados.corretores||[];
-  const linhas=lista.map(c=>`<tr><td>${esc(c.nome)}</td><td><button class="danger-link" data-del-corretor="${c.id}">Remover</button></td></tr>`).join('');
+  const linhas=lista.map(c=>`<tr><td>${esc(c.nome)}</td><td style="white-space:normal"><button class="btn secondary" data-funil="${c.id}" style="padding:6px 12px;font-size:12px;margin-right:8px">${funilExpandido===c.id?'▲ Ocultar funil':'▼ Ver funil'}</button><button class="danger-link" data-del-corretor="${c.id}">Remover</button></td></tr>`).join('');
+  const alvo=lista.find(c=>c.id===funilExpandido);
+  const blocoFunil=alvo?painelMetricasCorretor(alvo.id,alvo.nome):'';
   return `<div class="panel">
     <h2>Corretores da equipe</h2>
     <div class="table-wrap"><table class="table"><thead><tr><th>Corretor</th><th></th></tr></thead>
@@ -258,9 +356,13 @@ function painelCorretoresEquipe(){
       <div class="field"><label>Senha</label><input id="novoCorretorSenha" type="password" placeholder="Senha de acesso"></div>
     </div>
     <button class="btn" id="addCorretor" style="margin-top:8px">Adicionar corretor</button>
-  </div>`;
+  </div>${blocoFunil}`;
 }
 function bindPainelCorretoresEquipe(){
+  document.querySelectorAll('[data-funil]').forEach(b=>b.onclick=()=>{
+    funilExpandido=funilExpandido===b.dataset.funil?null:b.dataset.funil;
+    render();
+  });
   document.querySelectorAll('[data-del-corretor]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Remover esse corretor da equipe? O acesso dele será desativado; o histórico de relatórios é mantido.'))return;
     try{ await excluirCorretor(b.dataset.delCorretor); await atualizar(); render(); }
@@ -275,6 +377,7 @@ function bindPainelCorretoresEquipe(){
       await atualizar(); render();
     }catch(e){ mostrarErro(e.message); }
   });
+  if(funilExpandido) bindFunilCorretor(funilExpandido);
 }
 
 function renderGerente(){
