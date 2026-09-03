@@ -984,6 +984,234 @@ function render(){
   }else if(usuario.tipo==='suporte'){
     renderSuporte();
   }else renderSuper();
-}
+}-- ==========================================================
+-- STATUS ONLINE DIÁRIO E CONTROLE DE ENTREGA POR HORÁRIO
+-- Execute este arquivo inteiro no SQL Editor do Supabase.
+-- ==========================================================
+
+create table if not exists public.status_corretor_diario (
+  corretor_id uuid not null references public.corretores(id) on delete cascade,
+  data date not null,
+  online boolean not null default true,
+  ativado_em timestamptz,
+  atualizado_em timestamptz not null default now(),
+  primary key (corretor_id, data)
+);
+
+create table if not exists public.entregas_relatorios (
+  corretor_id uuid not null references public.corretores(id) on delete cascade,
+  data date not null,
+  periodo text not null check (periodo in ('12:00','15:00','18:00','21:00')),
+  entregue_em timestamptz not null default now(),
+  primary key (corretor_id, data, periodo)
+);
+
+create index if not exists entregas_relatorios_data_periodo_idx
+  on public.entregas_relatorios (data, periodo);
+
+alter table public.status_corretor_diario enable row level security;
+alter table public.entregas_relatorios enable row level security;
+revoke all on public.status_corretor_diario from anon, authenticated;
+revoke all on public.entregas_relatorios from anon, authenticated;
+
+-- O corretor só pode ativar/desativar o próprio status, para a data informada.
+create or replace function public.definir_status_corretor(
+  p_token text,
+  p_data date,
+  p_online boolean
+) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $definir_status_corretor$
+declare
+  v_usuario public.usuarios;
+begin
+  select usuario.* into v_usuario
+  from public.sessoes sessao
+  join public.usuarios usuario on usuario.id = sessao.usuario_id
+  where sessao.token = p_token
+    and sessao.expira_em > now()
+    and usuario.ativo = true;
+
+  if not found then raise exception 'Sessão expirada.'; end if;
+  if v_usuario.tipo <> 'corretor' or v_usuario.corretor_id is null then
+    raise exception 'Somente o corretor pode alterar o próprio status.';
+  end if;
+  if p_data is null then raise exception 'Informe a data do status.'; end if;
+
+  insert into public.status_corretor_diario (
+    corretor_id, data, online, ativado_em, atualizado_em
+  ) values (
+    v_usuario.corretor_id, p_data, coalesce(p_online, false),
+    case when p_online then now() else null end, now()
+  ) on conflict (corretor_id, data) do update set
+    online = excluded.online,
+    ativado_em = case when excluded.online then now() else null end,
+    atualizado_em = now();
+
+  return true;
+end;
+$definir_status_corretor$;
+
+-- Registra o instante real de envio de cada período.
+create or replace function public.registrar_entrega_relatorio(
+  p_token text,
+  p_corretor_id text,
+  p_data date,
+  p_periodo text
+) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $registrar_entrega_relatorio$
+declare
+  v_usuario public.usuarios;
+  v_corretor public.corretores;
+  v_gerencia public.gerencias;
+begin
+  select usuario.* into v_usuario
+  from public.sessoes sessao
+  join public.usuarios usuario on usuario.id = sessao.usuario_id
+  where sessao.token = p_token
+    and sessao.expira_em > now()
+    and usuario.ativo = true;
+  if not found then raise exception 'Sessão expirada.'; end if;
+
+  select * into v_corretor
+  from public.corretores
+  where id = p_corretor_id::uuid and ativo = true;
+  if not found then raise exception 'Corretor inválido.'; end if;
+  select * into v_gerencia from public.gerencias where id = v_corretor.gerencia_id;
+
+  if not (
+    v_usuario.tipo = 'suporte'
+    or (v_usuario.tipo = 'superintendente'
+        and v_gerencia.superintendencia_id = v_usuario.superintendencia_id)
+    or (v_usuario.tipo = 'gerente' and v_corretor.gerencia_id = v_usuario.gerencia_id)
+    or (v_usuario.tipo = 'corretor' and v_corretor.id = v_usuario.corretor_id)
+  ) then raise exception 'Sem permissão.'; end if;
+
+  if p_data is null or p_periodo not in ('12:00','15:00','18:00','21:00') then
+    raise exception 'Período de relatório inválido.';
+  end if;
+  if not exists (
+    select 1 from public.relatorios
+    where corretor_id = v_corretor.id and data = p_data and periodo = p_periodo
+  ) then
+    raise exception 'Salve os dados do período antes de enviá-lo.';
+  end if;
+
+  insert into public.entregas_relatorios (corretor_id, data, periodo, entregue_em)
+  values (v_corretor.id, p_data, p_periodo, now())
+  on conflict (corretor_id, data, periodo) do update set entregue_em = now();
+  return true;
+end;
+$registrar_entrega_relatorio$;
+
+-- Retorna somente os status e entregas que o usuário pode visualizar.
+create or replace function public.status_e_entregas_do_dia(
+  p_token text,
+  p_data date
+) returns jsonb
+language plpgsql security definer set search_path = public, extensions
+as $status_e_entregas_do_dia$
+declare
+  v_usuario public.usuarios;
+  v_resultado jsonb;
+begin
+  select usuario.* into v_usuario
+  from public.sessoes sessao
+  join public.usuarios usuario on usuario.id = sessao.usuario_id
+  where sessao.token = p_token
+    and sessao.expira_em > now()
+    and usuario.ativo = true;
+  if not found then raise exception 'Sessão expirada.'; end if;
+  if p_data is null then raise exception 'Informe a data de consulta.'; end if;
+
+  select jsonb_build_object(
+    'status_diario', coalesce((
+      select jsonb_agg(to_jsonb(x) order by x.nome) from (
+        select s.corretor_id, s.data, s.online, s.ativado_em, s.atualizado_em,
+               c.nome, c.gerencia_id
+        from public.status_corretor_diario s
+        join public.corretores c on c.id = s.corretor_id
+        join public.gerencias g on g.id = c.gerencia_id
+        where s.data = p_data and c.ativo = true and (
+          v_usuario.tipo = 'suporte'
+          or (v_usuario.tipo = 'superintendente'
+              and g.superintendencia_id = v_usuario.superintendencia_id)
+          or (v_usuario.tipo = 'gerente' and c.gerencia_id = v_usuario.gerencia_id)
+          or (v_usuario.tipo = 'corretor' and c.id = v_usuario.corretor_id)
+        )
+      ) x
+    ), '[]'::jsonb),
+    'entregas_relatorios', coalesce((
+      select jsonb_agg(to_jsonb(x) order by x.periodo, x.nome) from (
+        select e.corretor_id, e.data, e.periodo, e.entregue_em, c.nome
+        from public.entregas_relatorios e
+        join public.corretores c on c.id = e.corretor_id
+        join public.gerencias g on g.id = c.gerencia_id
+        where e.data = p_data and c.ativo = true and (
+          v_usuario.tipo = 'suporte'
+          or (v_usuario.tipo = 'superintendente'
+              and g.superintendencia_id = v_usuario.superintendencia_id)
+          or (v_usuario.tipo = 'gerente' and c.gerencia_id = v_usuario.gerencia_id)
+          or (v_usuario.tipo = 'corretor' and c.id = v_usuario.corretor_id)
+        )
+      ) x
+    ), '[]'::jsonb)
+  ) into v_resultado;
+
+  return v_resultado;
+end;
+$status_e_entregas_do_dia$;
+
+-- Mantém o controle coerente caso o dia inteiro seja apagado na tela atual.
+create or replace function public.excluir_entregas_do_dia(
+  p_token text,
+  p_corretor_id text,
+  p_data date
+) returns boolean
+language plpgsql security definer set search_path = public, extensions
+as $excluir_entregas_do_dia$
+declare
+  v_usuario public.usuarios;
+  v_corretor public.corretores;
+  v_gerencia public.gerencias;
+begin
+  select usuario.* into v_usuario
+  from public.sessoes sessao
+  join public.usuarios usuario on usuario.id = sessao.usuario_id
+  where sessao.token = p_token
+    and sessao.expira_em > now()
+    and usuario.ativo = true;
+  if not found then raise exception 'Sessão expirada.'; end if;
+
+  select * into v_corretor from public.corretores where id = p_corretor_id::uuid;
+  if not found then raise exception 'Corretor inválido.'; end if;
+  select * into v_gerencia from public.gerencias where id = v_corretor.gerencia_id;
+
+  if not (
+    v_usuario.tipo = 'suporte'
+    or (v_usuario.tipo = 'superintendente'
+        and v_gerencia.superintendencia_id = v_usuario.superintendencia_id)
+    or (v_usuario.tipo = 'gerente' and v_corretor.gerencia_id = v_usuario.gerencia_id)
+    or (v_usuario.tipo = 'corretor' and v_corretor.id = v_usuario.corretor_id)
+  ) then raise exception 'Sem permissão.'; end if;
+
+  delete from public.entregas_relatorios
+  where corretor_id = v_corretor.id and data = p_data;
+  return true;
+end;
+$excluir_entregas_do_dia$;
+
+grant execute on function public.definir_status_corretor(text, date, boolean)
+  to anon, authenticated;
+grant execute on function public.registrar_entrega_relatorio(text, text, date, text)
+  to anon, authenticated;
+grant execute on function public.status_e_entregas_do_dia(text, date)
+  to anon, authenticated;
+grant execute on function public.excluir_entregas_do_dia(text, text, date)
+  to anon, authenticated;
+
+select pg_notify('pgrst', 'reload schema');
+
 
 validarSessao();
