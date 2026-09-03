@@ -384,13 +384,25 @@ function renderGerente(){
   const equipe=registrosPorCorretor();
   const ranked=equipe.map(c=>({corretor:c.nome,gerencia:c.gerencia,...somar(c.linhas)})).sort(ordenarRank);
   const total=somar(dados.relatorios||[]);
-  shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc((dados.corretores||[])[0]?.gerencia||'Minha equipe')}</h1>${filtros()}${cards(total)}
+  const nomeEquipe=(dados.corretores||[])[0]?.gerencia||'Minha equipe';
+  shell(`${nav()}<h1>${esc(usuario.nome)} — ${esc(nomeEquipe)}</h1>${filtros()}${cards(total)}
+    <div class="panel"><h2>📐 Funil de conversão</h2><p class="muted">Copie o funil completo da equipe, pronto para enviar no WhatsApp.</p>
+      <button class="btn secondary" id="btnCopiarFunilEquipe">📐 Copiar funil</button></div>
     <div class="panel"><h2>🏆 Ranking da equipe</h2><p class="muted">Critério: Venda 100% → Pré-venda → Proposta → Visita → Agendamento → Negociação → Interação → Lead Novo.</p>${tabelaRanking(ranked)}</div>
     <div class="panel"><h2>Corretores</h2>${tabelaCorretores(equipe)}</div>
     ${painelCorretoresEquipe()}
     ${painelAgendamentosPeriodo(equipe)}
     ${paineisAgendamentosSemanaGerente(equipe)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelCorretoresEquipe();
+  bindCopiarFunilEquipe(total,filtroInicio,filtroFim,nomeEquipe);
+}
+function bindCopiarFunilEquipe(total,dataIni,dataFim,titulo){
+  const btn=document.getElementById('btnCopiarFunilEquipe');
+  if(!btn) return;
+  btn.onclick=e=>{
+    e.stopPropagation();
+    copiarTexto(textoFunil(titulo,total,'Total do período',dataIni,dataFim),btn);
+  };
 }
 function tabelaRanking(rows){
   return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Corretor</th>${CAMPOS.map(x=>`<th>${x[1]}</th>`).join('')}${CONVERSOES.map(c=>`<th>${c[2]}</th>`).join('')}</tr></thead><tbody>
@@ -465,13 +477,16 @@ function renderSuper(){
     <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletorTotal}</label></div>
     ${cardsMini(tTotal)}
     <div class="muted" style="margin-top:10px">1º ${esc(rankingGeral[0]?.corretor||'—')} · ${n(rankingGeral[0]?.vendas)} venda(s)</div>
-    <button class="btn secondary" id="btnCopiarTotalGeral" style="margin-top:14px" onclick="event.stopPropagation()">📋 Copiar relatório</button></div>`;
+    <button class="btn secondary" id="btnCopiarTotalGeral" style="margin-top:14px;margin-right:8px" onclick="event.stopPropagation()">📋 Copiar relatório</button>
+    <button class="btn secondary" id="btnCopiarFunilTotal" style="margin-top:14px" onclick="event.stopPropagation()">📐 Copiar funil</button></div>`;
 
+  const totaisPorGerencia={};
   const gerCards=Object.entries(gerMap).sort().map(([g,cs])=>{
     const periodoSel=filtroPeriodoGerencia[g]||'total';
     const linhasGerencia=cs.flatMap(c=>c.linhas);
     const linhasFiltradas=periodoSel==='total'?linhasGerencia:linhasGerencia.filter(r=>r.periodo===periodoSel);
     const t=somar(linhasFiltradas);
+    totaisPorGerencia[g]=t;
     const ranking=cs.map(c=>({corretor:c.nome,...somar(c.linhas)})).sort(ordenarRank);
     const seletor=`<select class="select" data-periodo-ger="${esc(g)}" onclick="event.stopPropagation()">
       <option value="total" ${periodoSel==='total'?'selected':''}>Total do dia</option>
@@ -480,7 +495,8 @@ function renderSuper(){
     return `<div class="panel manager-card" data-ger="${esc(g)}"><h2>${esc(g)}</h2>
       <div class="toolbar" style="margin-bottom:12px"><label>Selecionar período ${seletor}</label></div>
       ${cardsMini(t)}
-      <div class="muted" style="margin-top:10px">1º ${esc(ranking[0]?.corretor||'—')} · ${n(ranking[0]?.vendas)} venda(s)</div></div>`;
+      <div class="muted" style="margin-top:10px">1º ${esc(ranking[0]?.corretor||'—')} · ${n(ranking[0]?.vendas)} venda(s)</div>
+      <button class="btn secondary" data-copiar-funil-ger="${esc(g)}" style="margin-top:14px" onclick="event.stopPropagation()">📐 Copiar funil</button></div>`;
   }).join('');
   shell(`${nav()}<h1>Visão geral da Superintendência</h1>${filtros()}${cards(total)}
     ${painelGerentes()}
@@ -490,6 +506,16 @@ function renderSuper(){
     ${paineisAgendamentosSemanaGerente(corretores)}`);
   bindNav();bindFiltros();bindAgendamentosPeriodo();bindAgendamentosSemanaGerente();bindPainelGerentes();
   bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,filtroInicio,filtroFim);
+  bindCopiarFunilTotal(tTotal,periodoSelTotal,filtroInicio,filtroFim);
+  document.querySelectorAll('[data-copiar-funil-ger]').forEach(b=>{
+    b.onclick=e=>{
+      e.stopPropagation();
+      const g=b.dataset.copiarFunilGer;
+      const periodoSel=filtroPeriodoGerencia[g]||'total';
+      const periodoLabel=periodoSel==='total'?'Total do dia':periodoSel;
+      copiarTexto(textoFunil(g,totaisPorGerencia[g],periodoLabel,filtroInicio,filtroFim),b);
+    };
+  });
   document.querySelectorAll('[data-periodo-ger]').forEach(s=>{
     s.onchange=e=>{ filtroPeriodoGerencia[e.target.dataset.periodoGer]=e.target.value; render(); };
   });
@@ -506,6 +532,18 @@ function textoTotalGeral(t,periodoLabel,rankingGeral,dataIni,dataFim){
     `Período: ${faixa} — ${periodoLabel}\n\n`+
     `${linhas}\n\n`+
     `1º lugar: ${top?.corretor||'—'} (${top?.gerencia||'—'}) — ${n(top?.vendas)} venda(s)`;
+}
+function textoFunil(titulo,t,periodoLabel,dataIni,dataFim){
+  const faixa=dataIni===dataFim?br(dataIni):`${br(dataIni)} a ${br(dataFim)}`;
+  const linhas=CAMPOS.map(([id,label],i)=>{
+    let bloco=`${label}: ${n(t[id])}`;
+    if(i<CONVERSOES.length) bloco+=`\n   ↓ ${pct(t[CONVERSOES[i][1]],t[CONVERSOES[i][0]])}`;
+    return bloco;
+  }).join('\n');
+  return `📐 FUNIL — ${titulo}\n`+
+    `Período: ${faixa} — ${periodoLabel}\n\n`+
+    `${linhas}\n\n`+
+    `Conversão geral (Leads Novos → Vendas 100%): ${pct(t.vendas,t.leads_novos)}`;
 }
 async function copiarTexto(texto,btn){
   const textoOriginal=btn.textContent;
@@ -531,6 +569,15 @@ function bindCopiarTotalGeral(tTotal,periodoSelTotal,rankingGeral,dataIni,dataFi
   btn.onclick=e=>{
     e.stopPropagation();
     copiarTexto(textoTotalGeral(tTotal,periodoLabel,rankingGeral,dataIni,dataFim),btn);
+  };
+}
+function bindCopiarFunilTotal(tTotal,periodoSelTotal,dataIni,dataFim){
+  const btn=document.getElementById('btnCopiarFunilTotal');
+  if(!btn) return;
+  const periodoLabel=periodoSelTotal==='total'?'Total do dia':periodoSelTotal;
+  btn.onclick=e=>{
+    e.stopPropagation();
+    copiarTexto(textoFunil('Total geral (todas as gerências)',tTotal,periodoLabel,dataIni,dataFim),btn);
   };
 }
 
