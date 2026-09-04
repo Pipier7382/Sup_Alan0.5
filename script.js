@@ -224,7 +224,7 @@ async function atualizar(){
 function renderLogin(){
   app.innerHTML=`<div class="login-page">
     <div class="login-card">
-      <div class="brand"><div class="logo">🐊</div><h1>Relatório da Superintendência</h1><p>Acesso ao sistema</p></div>
+      <div class="brand"><div class="logo">⭐</div><h1>Relatório da Superintendência</h1><p>Acesso ao sistema</p></div>
       <form id="loginForm">
         <div class="field"><label>Você é</label>
           <select id="tipo"><option value="corretor">Corretor</option><option value="gerente">Gerente</option><option value="superintendente">Superintendente</option><option value="suporte">Suporte</option></select>
@@ -250,7 +250,7 @@ function shell(content){
   const tipoLabel={corretor:'Corretor',gerente:'Gerente',superintendente:'Superintendente',suporte:'Suporte'}[usuario.tipo];
   const badgeMaster=usuario.tipo==='suporte'?' <span class="badge">Acesso master</span>':'';
   app.innerHTML=`<div class="shell ${alertaPessoal?'alerta-relatorio':''}"><header class="topbar">
-    <div><div class="title">🐊 Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}${badgeMaster}</div></div>
+    <div><div class="title">⭐ Superintendência</div><div style="font-size:11px;opacity:.7">${tipoLabel}${badgeMaster}</div></div>
     <div class="userbox"><span>${esc(usuario.nome)}</span><button class="btn secondary" id="sair">Sair</button></div>
   </header><main class="layout">${content}</main></div>`;
   document.getElementById('sair').onclick=logout;
